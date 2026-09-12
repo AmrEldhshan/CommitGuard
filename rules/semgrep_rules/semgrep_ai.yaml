@@ -1,0 +1,3485 @@
+rules:
+- id: mcp-unsanitized-return-python
+  mode: taint
+  languages:
+  - python
+  severity: WARNING
+  message: External HTTP response data flows directly into an MCP tool return value
+    without sanitization. Untrusted API responses may contain prompt injection payloads
+    or malicious content that could manipulate the LLM. Sanitize or validate external
+    data before returning it from MCP tools.
+  metadata:
+    cwe: 'CWE-116: Improper Encoding or Escaping of Output'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    technology:
+    - mcp
+    references:
+    - https://modelcontextprotocol.io/specification/draft/basic/security_best_practices
+  pattern-sources:
+  - patterns:
+    - pattern-either:
+      - pattern: requests.get(...)
+      - pattern: requests.post(...)
+      - pattern: urllib.request.urlopen(...)
+  pattern-sinks:
+  - patterns:
+    - pattern-inside: "@$SERVER.tool()\ndef $FUNC(...):\n    ...\n"
+    - pattern: return $SINK
+    - focus-metavariable: $SINK
+  pattern-sanitizers:
+  - pattern: sanitize(...)
+  - pattern: bleach.clean(...)
+  - pattern: html.escape(...)
+  - pattern: str.strip(...)
+- id: mistral-hardcoded-api-key-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: Mistral API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - mistral
+    references:
+    - https://docs.mistral.ai/getting-started/quickstart/
+  pattern: 'new Mistral({apiKey: "$KEY", ...})
+
+    '
+- id: mistral-hardcoded-api-key-python
+  languages:
+  - python
+  severity: ERROR
+  message: Mistral API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - mistral
+    references:
+    - https://docs.mistral.ai/getting-started/quickstart/
+  pattern-either:
+  - pattern: Mistral(api_key="$KEY", ...)
+  - pattern: MistralClient(api_key="$KEY", ...)
+- id: mistral-missing-moderation
+  languages:
+  - python
+  severity: WARNING
+  message: Mistral chat completion used without content moderation. Consider using
+    the Moderation API (client.classifiers.moderate() or client.classifiers.moderate_chat())
+    to check content for harmful material. See https://docs.mistral.ai/capabilities/guardrailing/
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - mistral
+    references:
+    - https://docs.mistral.ai/capabilities/guardrailing/
+  patterns:
+  - pattern: $CLIENT.chat.complete(...)
+  - pattern-inside: "def $FUNC(...):\n    ...\n"
+  - pattern-not-inside: "def $FUNC(...):\n    ...\n    $CLIENT.classifiers.moderate(...)\n\
+      \    ...\n"
+  - pattern-not-inside: "def $FUNC(...):\n    ...\n    $CLIENT.classifiers.moderate_chat(...)\n\
+      \    ...\n"
+- id: mistral-missing-safe-prompt-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: Mistral chat completion called without 'safe_prompt' parameter. Setting
+    safePrompt=true enables Mistral's built-in safety guardrailing. See https://docs.mistral.ai/capabilities/guardrailing/
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - mistral
+    references:
+    - https://docs.mistral.ai/capabilities/guardrailing/
+  patterns:
+  - pattern: $CLIENT.chat.complete({...})
+  - pattern-not: '$CLIENT.chat.complete({..., safePrompt: $SP, ...})'
+- id: mistral-missing-safe-prompt-python
+  languages:
+  - python
+  severity: WARNING
+  message: Mistral chat completion called without 'safe_prompt' parameter. Setting
+    safe_prompt=True enables Mistral's built-in safety guardrailing. See https://docs.mistral.ai/capabilities/guardrailing/
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - mistral
+    references:
+    - https://docs.mistral.ai/capabilities/guardrailing/
+  patterns:
+  - pattern: $CLIENT.chat.complete(...)
+  - pattern-not: $CLIENT.chat.complete(..., safe_prompt=$SP, ...)
+- id: mistral-no-error-handling
+  languages:
+  - python
+  severity: WARNING
+  message: Mistral API call without error handling. Wrap API calls in try/except to
+    handle rate limits, API errors, and network issues gracefully.
+  metadata:
+    cwe: 'CWE-754: Improper Check for Unusual or Exceptional Conditions'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - mistral
+    references:
+    - https://docs.mistral.ai/capabilities/guardrailing/
+  patterns:
+  - pattern-either:
+    - pattern: $CLIENT.chat.complete(...)
+    - pattern: $CLIENT.chat.stream(...)
+  - pattern-not-inside: "try:\n    ...\nexcept ...:\n    ...\n"
+- id: mistral-user-input-in-system-prompt-js
+  mode: taint
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: User input flows into the Mistral system prompt. This enables prompt injection
+    attacks where users can override system instructions. Validate and sanitize user
+    input, or move user input to the 'user' role message instead.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - mistral
+    references:
+    - https://docs.mistral.ai/capabilities/guardrailing/
+  pattern-sources:
+  - pattern: req.body.$F
+  - pattern: req.query.$F
+  - pattern: req.params.$F
+  - pattern: req.body
+  pattern-sinks:
+  - patterns:
+    - pattern: '{role: "system", content: $SINK}
+
+        '
+    - focus-metavariable: $SINK
+- id: mistral-user-input-in-system-prompt-python
+  mode: taint
+  languages:
+  - python
+  severity: ERROR
+  message: User input flows into the Mistral system prompt. This enables prompt injection
+    attacks where users can override system instructions. Validate and sanitize user
+    input, or move user input to the 'user' role message instead.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - mistral
+    references:
+    - https://docs.mistral.ai/capabilities/guardrailing/
+  pattern-sources:
+  - pattern: request.args.get(...)
+  - pattern: request.form[...]
+  - pattern: request.form.get(...)
+  - pattern: request.json[...]
+  - pattern: request.json.get(...)
+  - pattern: request.data
+  - pattern: request.GET[...]
+  - pattern: request.GET.get(...)
+  - pattern: request.POST[...]
+  - pattern: request.POST.get(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: '{"role": "system", "content": $SINK}
+
+        '
+    - focus-metavariable: $SINK
+- id: openai-hardcoded-api-key-go
+  languages:
+  - go
+  severity: ERROR
+  message: OpenAI API key is hardcoded in source code. Use environment variables or
+    a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
+  patterns:
+  - pattern: openai.NewClient("$KEY")
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^sk-
+- id: openai-hardcoded-api-key-java
+  languages:
+  - java
+  severity: ERROR
+  message: OpenAI API key is hardcoded in source code. Use environment variables or
+    a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
+  patterns:
+  - pattern: new OpenAiService("$KEY")
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^sk-
+- id: openai-hardcoded-api-key-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: OpenAI API key is hardcoded in source code. Use environment variables or
+    a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
+  patterns:
+  - pattern: 'new OpenAI({apiKey: "$KEY", ...})
+
+      '
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^sk-
+- id: openai-hardcoded-api-key-python
+  languages:
+  - python
+  severity: ERROR
+  message: OpenAI API key is hardcoded in source code. Use environment variables or
+    a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
+  pattern-either:
+  - patterns:
+    - pattern: OpenAI(api_key="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^sk-
+  - patterns:
+    - pattern: AsyncOpenAI(api_key="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^sk-
+- id: openai-hardcoded-api-key-ruby
+  languages:
+  - ruby
+  severity: ERROR
+  message: OpenAI API key is hardcoded in source code. Use environment variables or
+    a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
+  patterns:
+  - pattern: 'OpenAI::Client.new(access_token: "$KEY", ...)
+
+      '
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^sk-
+- id: openai-missing-max-tokens-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: OpenAI chat completion created without 'max_tokens' parameter. Setting
+    max_tokens prevents unexpectedly long or expensive responses and limits potential
+    abuse. See https://developers.openai.com/api/docs/guides/safety-best-practices
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices
+  patterns:
+  - pattern: $CLIENT.chat.completions.create({...})
+  - pattern-not: '$CLIENT.chat.completions.create({..., max_tokens: $MT, ...})'
+- id: openai-missing-max-tokens-python
+  languages:
+  - python
+  severity: WARNING
+  message: OpenAI chat completion created without 'max_tokens' parameter. Setting
+    max_tokens prevents unexpectedly long or expensive responses and limits potential
+    abuse. See https://developers.openai.com/api/docs/guides/safety-best-practices
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices
+  patterns:
+  - pattern: $CLIENT.chat.completions.create(...)
+  - pattern-not: $CLIENT.chat.completions.create(..., max_tokens=$MT, ...)
+- id: openai-missing-moderation
+  languages:
+  - python
+  severity: WARNING
+  message: OpenAI chat completion used without content moderation. Consider using
+    the Moderations API (client.moderations.create()) to check user input for harmful
+    content before sending to the model.
+  metadata:
+    cwe: 'CWE-77: Improper Neutralization of Special Elements used in a Command (''Command
+      Injection'')'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/moderation
+  patterns:
+  - pattern: $CLIENT.chat.completions.create(...)
+  - pattern-inside: "def $FUNC(...):\n    ...\n"
+  - pattern-not-inside: "def $FUNC(...):\n    ...\n    $CLIENT.moderations.create(...)\n\
+      \    ...\n"
+- id: openai-missing-moderation-check
+  languages:
+  - python
+  severity: WARNING
+  message: OpenAI moderation response accessed without checking the 'flagged' field.
+    Always check results[0].flagged before processing moderation categories to properly
+    filter harmful content. See https://developers.openai.com/api/docs/guides/moderation
+  metadata:
+    cwe: 'CWE-252: Unchecked Return Value'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/moderation
+  pattern-either:
+  - patterns:
+    - pattern: $RESP.results[0].categories
+    - pattern-inside: "def $FUNC(...):\n    ...\n"
+    - pattern-not-inside: "def $FUNC(...):\n    ...\n    if $RESP.results[0].flagged:\n\
+        \        ...\n    ...\n"
+    - pattern-not-inside: "def $FUNC(...):\n    ...\n    if $RESP.results[0].flagged\
+        \ == True:\n        ...\n    ...\n"
+  - patterns:
+    - pattern: $RESP.results[0].category_scores
+    - pattern-inside: "def $FUNC(...):\n    ...\n"
+    - pattern-not-inside: "def $FUNC(...):\n    ...\n    if $RESP.results[0].flagged:\n\
+        \        ...\n    ...\n"
+    - pattern-not-inside: "def $FUNC(...):\n    ...\n    if $RESP.results[0].flagged\
+        \ == True:\n        ...\n    ...\n"
+- id: openai-missing-refusal-check-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: OpenAI response content accessed without checking for refusal. The model
+    may refuse requests, and accessing .content without checking .refusal first may
+    lead to unexpected behavior. Check response.choices[0].message.refusal before
+    accessing content.
+  metadata:
+    cwe: 'CWE-252: Unchecked Return Value'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices/
+  patterns:
+  - pattern: $RESP.choices[0].message.content
+  - pattern-not-inside: "if ($RESP.choices[0].message.refusal) {\n    ...\n} else\
+      \ {\n    ...\n}\n"
+  - pattern-not-inside: "if (!$RESP.choices[0].message.refusal) {\n    ...\n}\n"
+- id: openai-missing-refusal-check-python
+  languages:
+  - python
+  severity: WARNING
+  message: OpenAI response content accessed without checking for refusal. The model
+    may refuse requests, and accessing .content without checking .refusal first may
+    lead to unexpected behavior. Check response.choices[0].message.refusal before
+    accessing content.
+  metadata:
+    cwe: 'CWE-252: Unchecked Return Value'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices/
+  patterns:
+  - pattern: $RESP.choices[0].message.content
+  - pattern-not-inside: "if $RESP.choices[0].message.refusal:\n    ...\nelse:\n  \
+      \  ...\n"
+  - pattern-not-inside: "if $RESP.choices[0].message.refusal is not None:\n    ...\n\
+      else:\n    ...\n"
+  - pattern-not-inside: "if not $RESP.choices[0].message.refusal:\n    ...\n"
+- id: openai-missing-safety-identifier-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: OpenAI Responses API called without 'safety_identifier' parameter. Include
+    a hashed user identifier to enable abuse monitoring and safety checks. See https://developers.openai.com/api/docs/guides/safety-checks
+  metadata:
+    cwe: 'CWE-778: Insufficient Logging'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-checks/
+  patterns:
+  - pattern: $CLIENT.responses.create({...})
+  - pattern-not: '$CLIENT.responses.create({..., safety_identifier: $SID, ...})'
+- id: openai-missing-safety-identifier-python
+  languages:
+  - python
+  severity: WARNING
+  message: OpenAI Responses API called without 'safety_identifier' parameter. Include
+    a hashed user identifier to enable abuse monitoring and safety checks. See https://developers.openai.com/api/docs/guides/safety-checks
+  metadata:
+    cwe: 'CWE-778: Insufficient Logging'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-checks/
+  patterns:
+  - pattern: $CLIENT.responses.create(...)
+  - pattern-not: $CLIENT.responses.create(..., safety_identifier=$SID, ...)
+- id: openai-missing-system-message-js
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: OpenAI chat completion created without a system message. A system message
+    helps establish behavioral guidelines and safety boundaries for the model.
+  metadata:
+    cwe: 'CWE-77: Improper Neutralization of Special Elements used in a Command (''Command
+      Injection'')'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices/
+  patterns:
+  - pattern: '$CLIENT.chat.completions.create({..., messages: $MSGS, ...})
+
+      '
+  - metavariable-pattern:
+      metavariable: $MSGS
+      patterns:
+      - pattern: '[..., {role: "user", ...}, ...]'
+      - pattern-not: '[..., {role: "system", ...}, ...]'
+- id: openai-missing-system-message-python
+  languages:
+  - python
+  severity: WARNING
+  message: OpenAI chat completion created without a system message. A system message
+    helps establish behavioral guidelines and safety boundaries for the model.
+  metadata:
+    cwe: 'CWE-77: Improper Neutralization of Special Elements used in a Command (''Command
+      Injection'')'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices/
+  patterns:
+  - pattern: '$CLIENT.chat.completions.create(..., messages=$MSGS, ...)
+
+      '
+  - metavariable-pattern:
+      metavariable: $MSGS
+      patterns:
+      - pattern: '[..., {"role": "user", ...}, ...]'
+      - pattern-not: '[..., {"role": "system", ...}, ...]'
+- id: openai-missing-user-parameter-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: OpenAI chat completion created without a 'user' parameter. Including a
+    unique user identifier helps OpenAI detect and prevent abuse. See https://platform.openai.com/docs/guides/safety-best-practices
+  metadata:
+    cwe: 'CWE-778: Insufficient Logging'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices/
+  patterns:
+  - pattern: $CLIENT.chat.completions.create({...})
+  - pattern-not: '$CLIENT.chat.completions.create({..., user: $USER, ...})'
+- id: openai-missing-user-parameter-python
+  languages:
+  - python
+  severity: WARNING
+  message: OpenAI chat completion created without a 'user' parameter. Including a
+    unique user identifier helps OpenAI detect and prevent abuse. See https://platform.openai.com/docs/guides/safety-best-practices
+  metadata:
+    cwe: 'CWE-778: Insufficient Logging'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices/
+  patterns:
+  - pattern: $CLIENT.chat.completions.create(...)
+  - pattern-not: $CLIENT.chat.completions.create(..., user=$USER, ...)
+- id: openai-no-error-handling-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: OpenAI API call without error handling. Wrap API calls in try/catch to
+    handle rate limits, API errors, and network issues gracefully.
+  metadata:
+    cwe: 'CWE-252: Unchecked Return Value'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices/
+  patterns:
+  - pattern-either:
+    - pattern: await $CLIENT.chat.completions.create({...})
+    - pattern: $CLIENT.chat.completions.create({...})
+  - pattern-not-inside: "try {\n    ...\n} catch ($ERR) {\n    ...\n}\n"
+- id: openai-no-error-handling
+  languages:
+  - python
+  severity: WARNING
+  message: OpenAI API call without error handling. Wrap API calls in try/except to
+    handle rate limits (RateLimitError), API errors (APIError), and network issues
+    gracefully.
+  metadata:
+    cwe: 'CWE-252: Unchecked Return Value'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - openai
+    references:
+    - https://developers.openai.com/api/docs/guides/safety-best-practices/
+  patterns:
+  - pattern: $CLIENT.chat.completions.create(...)
+  - pattern-not-inside: "try:\n    ...\nexcept ...:\n    ...\n"
+- id: openai-user-input-in-system-prompt-js
+  mode: taint
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: User input flows into the OpenAI system prompt. This enables prompt injection
+    attacks where users can override system instructions. Validate and sanitize user
+    input, or move user input to the 'user' role message instead.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - openai
+    references:
+    - https://platform.openai.com/docs
+  pattern-sources:
+  - pattern: req.body.$F
+  - pattern: req.query.$F
+  - pattern: req.params.$F
+  - pattern: req.body
+  pattern-sinks:
+  - patterns:
+    - pattern: '{role: "system", content: $SINK}
+
+        '
+    - focus-metavariable: $SINK
+- id: openai-user-input-in-system-prompt-python
+  mode: taint
+  languages:
+  - python
+  severity: ERROR
+  message: User input flows into the OpenAI system prompt. This enables prompt injection
+    attacks where users can override system instructions. Validate and sanitize user
+    input, or move user input to the 'user' role message instead.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - openai
+    references:
+    - https://platform.openai.com/docs
+  pattern-sources:
+  - pattern: request.args.get(...)
+  - pattern: request.form[...]
+  - pattern: request.form.get(...)
+  - pattern: request.json[...]
+  - pattern: request.json.get(...)
+  - pattern: request.data
+  - pattern: request.GET[...]
+  - pattern: request.GET.get(...)
+  - pattern: request.POST[...]
+  - pattern: request.POST.get(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: '{"role": "system", "content": $SINK}
+
+        '
+    - focus-metavariable: $SINK
+- id: skill-md-base64-payload-generic
+  languages:
+  - generic
+  severity: WARNING
+  message: SKILL.md or AGENT.md instructs the agent to decode and execute a base64
+    (or hex) blob, which is a common encoding-evasion pattern used to smuggle malicious
+    instructions past human review. Document the content in plain text or remove the
+    encoded payload, and audit the decoded value before reintroducing it.
+  metadata:
+    cwe: 'CWE-506: Embedded Malicious Code'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - claude-code
+    - anthropic
+    - mcp
+    references:
+    - https://github.com/Agent-Threat-Rule/agent-threat-rules
+    - https://genai.owasp.org/llmrisk/llm01-prompt-injection/
+  paths:
+    include:
+    - '*SKILL.md'
+    - '*AGENT.md'
+    - '*AGENTS.md'
+    - '*skill.md'
+  pattern-either:
+  - pattern-regex: (?i)(?:decode|run|execute|eval)\s+(?:this\s+|the\s+following\s+)?base64[^\n]{0,40}[A-Za-z0-9+/]{60,}={0,2}
+  - pattern-regex: (?i)base64\s+-d\s*<<<\s*["']?[A-Za-z0-9+/]{60,}={0,2}
+  - pattern-regex: (?i)echo\s+["']?[A-Za-z0-9+/]{60,}={0,2}["']?\s*\|\s*base64\s+(?:-d|--decode)
+  - pattern-regex: (?i)(?:decode|run|execute)\s+(?:this\s+)?hex(?:\s+payload)?[^\n]{0,40}(?:[0-9a-fA-F]{2}\s?){40,}
+- id: skill-md-data-exfiltration-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: SKILL.md or AGENT.md content instructs the agent to exfiltrate data to
+    an attacker-controlled endpoint. Patterns like "send the result to http://...",
+    "POST credentials to ...", or "include the contents in a request to ..." inside
+    a skill body are read as authoritative instructions by agents that load the skill.
+    Remove the exfiltration directive or audit the skill source.
+  metadata:
+    cwe: 'CWE-201: Insertion of Sensitive Information Into Sent Data'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: HIGH
+    technology:
+    - claude-code
+    - anthropic
+    - mcp
+    references:
+    - https://github.com/Agent-Threat-Rule/agent-threat-rules
+    - https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+  paths:
+    include:
+    - '*SKILL.md'
+    - '*AGENT.md'
+    - '*AGENTS.md'
+    - '*skill.md'
+  pattern-either:
+  - pattern-regex: (?i)(?:send|post|forward|upload|exfiltrate|deliver)\s+(?:the\s+)?(?:result|output|contents?|response|data|file|secret|token|key|credential|env)\s+(?:to|via)\s+https?://
+  - pattern-regex: (?i)(?:include|append|attach)\s+(?:the\s+)?(?:contents?|output)\s+(?:in|to)\s+(?:a\s+)?(?:request|webhook|callback)\s+to\s+https?://
+  - pattern-regex: (?i)curl\s+-X?\s*POST\s+https?://[a-z0-9.-]+/[^\s]*\s+-d\s+["'](?:\$|@)
+  - pattern-regex: (?i)before\s+(?:returning|responding|answering),?\s+(?:also\s+)?(?:read|cat|fetch|load)\s+(?:~/\.ssh|~/\.aws|~/\.config|/etc/(?:passwd|shadow)|\.env)
+- id: skill-md-prompt-injection-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: 'SKILL.md or AGENT.md frontmatter description contains prompt-injection
+    markers that may override agent behavior. Phrases like "ignore previous instructions",
+    "system: you are", or "<IMPORTANT>" inside a skill description are read as authoritative
+    instructions by agents that load the skill, bypassing the user''s intent. Remove
+    the override directive from the description, or move authoritative system text
+    out of the shared skill manifest.'
+  metadata:
+    cwe: 'CWE-94: Improper Control of Generation of Code'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: HIGH
+    technology:
+    - claude-code
+    - anthropic
+    - mcp
+    references:
+    - https://github.com/Agent-Threat-Rule/agent-threat-rules
+    - https://genai.owasp.org/llmrisk/llm01-prompt-injection/
+  paths:
+    include:
+    - '*SKILL.md'
+    - '*AGENT.md'
+    - '*AGENTS.md'
+    - '*skill.md'
+  pattern-either:
+  - pattern-regex: (?i)description\s*:\s*["'][^"'\n]*ignore\s+(?:all\s+)?previous\s+instructions[^"'\n]*["']
+  - pattern-regex: (?i)description\s*:\s*["'][^"'\n]*disregard\s+(?:the\s+)?(?:above|prior|previous)[^"'\n]*["']
+  - pattern-regex: (?i)description\s*:\s*["'][^"'\n]*<IMPORTANT>[^"'\n]*
+  - pattern-regex: (?i)description\s*:\s*["'][^"'\n]*system\s*:\s*you\s+are[^"'\n]*["']
+  - pattern-regex: (?si)description\s*:\s*[|>][^\n]*(?:\n[ \t]+[^\n]*){0,15}\n[ \t]+[^\n]*(?:ignore\s+(?:all\s+)?previous\s+instructions|<IMPORTANT>|disregard\s+(?:the\s+)?(?:above|prior|previous))
+- id: skill-md-sensitive-file-access-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: SKILL.md or AGENT.md instructs the agent to read sensitive credential files
+    such as ~/.ssh/id_rsa, ~/.aws/credentials, /etc/shadow, .env, or browser cookie
+    stores. Agents that load this skill will treat the directive as authoritative
+    and may exfiltrate the contents. Remove the file-access directive or scope it
+    to user-supplied paths.
+  metadata:
+    cwe: 'CWE-538: Insertion of Sensitive Information into Externally-Accessible File
+      or Directory'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: HIGH
+    technology:
+    - claude-code
+    - anthropic
+    - mcp
+    references:
+    - https://github.com/Agent-Threat-Rule/agent-threat-rules
+    - https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+  paths:
+    include:
+    - '*SKILL.md'
+    - '*AGENT.md'
+    - '*AGENTS.md'
+    - '*skill.md'
+  pattern-either:
+  - pattern-regex: (?i)(?:read|cat|load|parse|open|access|fetch)\s+(?:the\s+)?(?:~/\.ssh/id_(?:rsa|ed25519|ecdsa|dsa)\b|~/\.ssh/known_hosts|~/\.aws/credentials|~/\.config/gcloud/[^\s]*credential|/etc/shadow|/etc/passwd)
+  - pattern-regex: (?i)(?:read|cat|load|parse|open|access|fetch)\s+(?:the\s+contents?\s+of\s+)?(?:~/\.npmrc|~/\.pypirc|~/\.docker/config\.json|~/\.kube/config|~/\.netrc)
+  - pattern-regex: (?i)(?:read|cat|load|parse|open|access|fetch|grep)\s+(?:the\s+)?\.env(?:\.\w+)?\s+(?:file|and)
+  - pattern-regex: (?i)(?:read|cat|load|parse|open|access|fetch)\s+(?:browser\s+)?cookies?\s+(?:from|in)\s+(?:Chrome|Firefox|Safari|Edge|~/Library/Application
+      Support/(?:Google/Chrome|Firefox))
+- id: agent-unbounded-loop-python
+  languages:
+  - python
+  severity: WARNING
+  message: LLM API call inside a `while True` loop without a break condition. This
+    creates an unbounded agent loop that may run indefinitely, consuming API credits
+    and resources. Add a break condition, iteration counter, or timeout to prevent
+    runaway execution.
+  metadata:
+    cwe: 'CWE-835: Loop with Unreachable Exit Condition (''Infinite Loop'')'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    technology:
+    - openai
+    - anthropic
+    - gemini
+    references:
+    - https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+  patterns:
+  - pattern-inside: "while True:\n    ...\n"
+  - pattern-either:
+    - pattern: $CLIENT.chat.completions.create(...)
+    - pattern: $CLIENT.messages.create(...)
+    - pattern: $MODEL.generate_content(...)
+  - pattern-not-inside: "while True:\n    ...\n    break\n    ...\n"
+- id: ai-config-hidden-unicode-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: Invisible or zero-width Unicode character detected in AI coding assistant
+    config file. These characters can be used in "Rules File Backdoor" attacks to
+    inject hidden malicious instructions that are invisible to developers but interpreted
+    by AI assistants. Remove all zero-width and bidirectional override characters
+    from this file.
+  metadata:
+    cwe: 'CWE-116: Improper Encoding or Escaping of Output'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    technology:
+    - cursor
+    - github-copilot
+    - windsurf
+    - claude-code
+    references:
+    - https://www.pillar.security/blog/new-vulnerability-in-github-copilot-and-cursor-how-hackers-can-weaponize-code-agents
+  paths:
+    include:
+    - '*.cursorrules'
+    - '*.mdc'
+    - '*copilot-instructions*'
+    - '*.windsurfrules'
+    - '*CLAUDE.md'
+    - '*AGENTS.md'
+  pattern-regex: '[\x{200B}\x{200C}\x{200D}\x{2063}\x{FEFF}\x{202A}-\x{202E}]'
+- id: anthropic-hardcoded-api-key-go
+  languages:
+  - go
+  severity: ERROR
+  message: Anthropic API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/docs/initial-setup
+  patterns:
+  - pattern: option.WithAPIKey("$KEY")
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^sk-ant-
+- id: anthropic-hardcoded-api-key-java
+  languages:
+  - java
+  severity: ERROR
+  message: Anthropic API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/docs/initial-setup
+  patterns:
+  - pattern: $OBJ.apiKey("$KEY")
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^sk-ant-
+- id: anthropic-hardcoded-api-key-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: Anthropic API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/docs/initial-setup
+  patterns:
+  - pattern: 'new Anthropic({apiKey: "$KEY", ...})
+
+      '
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^sk-ant-
+- id: anthropic-hardcoded-api-key-python
+  languages:
+  - python
+  severity: ERROR
+  message: Anthropic API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/docs/initial-setup
+  pattern-either:
+  - patterns:
+    - pattern: Anthropic(api_key="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^sk-ant-
+  - patterns:
+    - pattern: AsyncAnthropic(api_key="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^sk-ant-
+- id: anthropic-hardcoded-api-key-ruby
+  languages:
+  - ruby
+  severity: ERROR
+  message: Anthropic API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/docs/initial-setup
+  patterns:
+  - pattern: 'Anthropic::Client.new(api_key: "$KEY", ...)
+
+      '
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^sk-ant-
+- id: anthropic-missing-max-tokens-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: Anthropic messages.create() called without 'max_tokens' parameter. Setting
+    max_tokens prevents unexpectedly long or expensive responses.
+  metadata:
+    cwe: 'CWE-770: Allocation of Resources Without Limits or Throttling'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern: $CLIENT.messages.create({...})
+  - pattern-not: '$CLIENT.messages.create({..., max_tokens: $MT, ...})'
+- id: anthropic-missing-max-tokens-python
+  languages:
+  - python
+  severity: WARNING
+  message: Anthropic messages.create() called without 'max_tokens' parameter. Setting
+    max_tokens prevents unexpectedly long or expensive responses.
+  metadata:
+    cwe: 'CWE-770: Allocation of Resources Without Limits or Throttling'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern: $CLIENT.messages.create(...)
+  - pattern-not: $CLIENT.messages.create(..., max_tokens=$MT, ...)
+- id: anthropic-missing-metadata-user-id-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: Anthropic messages.create() called without 'metadata' parameter. Pass a
+    metadata object with a hashed user_id to enable abuse tracking and policy enforcement.
+    See https://docs.anthropic.com/en/api/messages
+  metadata:
+    cwe: 'CWE-778: Insufficient Logging'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern: $CLIENT.messages.create({...})
+  - pattern-not: '$CLIENT.messages.create({..., metadata: $META, ...})'
+- id: anthropic-missing-metadata-user-id-python
+  languages:
+  - python
+  severity: WARNING
+  message: Anthropic messages.create() called without 'metadata' parameter. Pass a
+    metadata object with a hashed user_id to enable abuse tracking and policy enforcement.
+    See https://docs.anthropic.com/en/api/messages
+  metadata:
+    cwe: 'CWE-778: Insufficient Logging'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern: $CLIENT.messages.create(...)
+  - pattern-not: $CLIENT.messages.create(..., metadata=$META, ...)
+- id: anthropic-missing-refusal-check-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: Anthropic response content accessed without checking stop_reason. Check
+    response.stop_reason to handle cases where the model stops unexpectedly (e.g.,
+    due to max_tokens or content filtering).
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern: $RESP.content
+  - pattern-either:
+    - pattern-inside: '$RESP = await $CLIENT.messages.create(...)
+
+        ...
+
+        '
+    - pattern-inside: '$RESP = $CLIENT.messages.create(...)
+
+        ...
+
+        '
+  - pattern-not-inside: "if ($RESP.stopReason === \"end_turn\") {\n    ...\n}\n"
+  - pattern-not-inside: "if ($RESP.stop_reason === \"end_turn\") {\n    ...\n}\n"
+- id: anthropic-missing-refusal-check-python
+  languages:
+  - python
+  severity: WARNING
+  message: Anthropic response content accessed without checking stop_reason. Check
+    response.stop_reason to handle cases where the model stops unexpectedly (e.g.,
+    due to max_tokens or content filtering).
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern: $RESP.content
+  - pattern-inside: '$RESP = $CLIENT.messages.create(...)
+
+      ...
+
+      '
+  - pattern-not-inside: "if $RESP.stop_reason == \"end_turn\":\n    ...\n"
+  - pattern-not-inside: "if $RESP.stop_reason != ...:\n    ...\nelse:\n    ...\n"
+- id: anthropic-missing-system-prompt-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: Anthropic messages.create() called without a 'system' parameter. A system
+    prompt helps set behavioral guidelines and safety boundaries for the model.
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern: $CLIENT.messages.create({...})
+  - pattern-not: '$CLIENT.messages.create({..., system: $SYS, ...})'
+- id: anthropic-missing-system-prompt-python
+  languages:
+  - python
+  severity: WARNING
+  message: Anthropic messages.create() called without a 'system' parameter. A system
+    prompt helps set behavioral guidelines and safety boundaries for the model.
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern: $CLIENT.messages.create(...)
+  - pattern-not: $CLIENT.messages.create(..., system=$SYS, ...)
+- id: anthropic-no-error-handling-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: Anthropic API call without error handling. Wrap API calls in try/catch
+    to handle rate limits, API errors, and network issues gracefully.
+  metadata:
+    cwe: 'CWE-754: Improper Check for Unusual or Exceptional Conditions'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern-either:
+    - pattern: await $CLIENT.messages.create({...})
+    - pattern: $CLIENT.messages.create({...})
+  - pattern-not-inside: "try {\n    ...\n} catch ($ERR) {\n    ...\n}\n"
+- id: anthropic-no-error-handling
+  languages:
+  - python
+  severity: WARNING
+  message: Anthropic API call without error handling. Wrap API calls in try/except
+    to handle rate limits, API errors, and network issues gracefully.
+  metadata:
+    cwe: 'CWE-754: Improper Check for Unusual or Exceptional Conditions'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/api/messages
+  patterns:
+  - pattern: $CLIENT.messages.create(...)
+  - pattern-not-inside: "try:\n    ...\nexcept ...:\n    ...\n"
+- id: anthropic-user-input-in-system-prompt-js
+  mode: taint
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: User input flows into the Anthropic system prompt. This enables prompt
+    injection attacks where users can override system instructions. Validate and sanitize
+    user input, or keep system prompts hardcoded.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/docs/initial-setup
+  pattern-sources:
+  - pattern: req.body.$F
+  - pattern: req.query.$F
+  - pattern: req.params.$F
+  - pattern: req.body
+  pattern-sinks:
+  - patterns:
+    - pattern: '$CLIENT.messages.create({..., system: $SINK, ...})
+
+        '
+    - focus-metavariable: $SINK
+- id: anthropic-user-input-in-system-prompt-python
+  mode: taint
+  languages:
+  - python
+  severity: ERROR
+  message: User input flows into the Anthropic system prompt. This enables prompt
+    injection attacks where users can override system instructions. Validate and sanitize
+    user input, or keep system prompts hardcoded.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - anthropic
+    references:
+    - https://docs.anthropic.com/en/docs/initial-setup
+  pattern-sources:
+  - pattern: request.args.get(...)
+  - pattern: request.form[...]
+  - pattern: request.form.get(...)
+  - pattern: request.json[...]
+  - pattern: request.json.get(...)
+  - pattern: request.data
+  - pattern: request.GET[...]
+  - pattern: request.GET.get(...)
+  - pattern: request.POST[...]
+  - pattern: request.POST.get(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: $CLIENT.messages.create(..., system=$SINK, ...)
+    - focus-metavariable: $SINK
+- id: claude-settings-auto-enable-mcp-generic
+  languages:
+  - generic
+  severity: WARNING
+  message: '"enableAllProjectMcpServers" is set to true in settings. This automatically
+    enables all MCP servers defined in project configuration without user confirmation,
+    allowing malicious repositories to register arbitrary MCP servers that execute
+    code on your machine. Remove this setting or set it to false so that MCP servers
+    require explicit approval.'
+  metadata:
+    cwe: 'CWE-862: Missing Authorization'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    technology:
+    - claude-code
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/security
+  paths:
+    include:
+    - '**/settings.json'
+    - '**/.claude/**'
+    - '**/*.settings.json'
+  pattern-regex: '"enableAllProjectMcpServers"\s*:\s*true'
+- id: claude-settings-bypass-permissions-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: 'Dangerous permission bypass detected in Claude Code or Cursor settings.
+    Settings like "bypassPermissions", "allowUnsandboxedCommands: true", or "enableWeakerNestedSandbox:
+    true" disable critical security controls that protect against malicious tool use.
+    Remove these settings or set them to false to maintain proper sandboxing and permission
+    checks.'
+  metadata:
+    cwe: 'CWE-862: Missing Authorization'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/security
+  paths:
+    include:
+    - '**/settings.json'
+    - '**/.claude/**'
+    - '**/*.settings.json'
+  pattern-either:
+  - pattern-regex: '"bypassPermissions"'
+  - pattern-regex: '"allowUnsandboxedCommands"\s*:\s*true'
+  - pattern-regex: '"enableWeakerNestedSandbox"\s*:\s*true'
+- id: claude-settings-env-url-override-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: API base URL override detected in settings or environment file. ANTHROPIC_BASE_URL
+    or OPENAI_BASE_URL overrides can redirect all API traffic to an attacker-controlled
+    server, exposing prompts, code, and API keys. Remove these overrides unless you
+    are intentionally proxying traffic through a trusted endpoint.
+  metadata:
+    cwe: 'CWE-923: Improper Restriction of Communication Channel to Intended Endpoints'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/security
+  paths:
+    include:
+    - '**/settings.json'
+    - '**/.env*'
+    - '**/.claude/**'
+    - '**/*.settings.json'
+  pattern-regex: (ANTHROPIC_BASE_URL|OPENAI_BASE_URL)\s*"?\s*[=:]\s*"?\s*\S+
+- id: cohere-hardcoded-api-key-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: Cohere API key is hardcoded in source code. Use environment variables or
+    a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - cohere
+    references:
+    - https://docs.cohere.com/reference/about
+  pattern: 'new CohereClient({token: "$KEY", ...})
+
+    '
+- id: cohere-hardcoded-api-key-python
+  languages:
+  - python
+  severity: ERROR
+  message: Cohere API key is hardcoded in source code. Use environment variables or
+    a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - cohere
+    references:
+    - https://docs.cohere.com/reference/about
+  pattern-either:
+  - pattern: cohere.Client(api_key="$KEY", ...)
+  - pattern: cohere.ClientV2(api_key="$KEY", ...)
+- id: cohere-no-error-handling
+  languages:
+  - python
+  severity: WARNING
+  message: Cohere API call without error handling. Wrap API calls in try/except to
+    handle rate limits, API errors, and network issues gracefully.
+  metadata:
+    cwe: 'CWE-754: Improper Check for Unusual or Exceptional Conditions'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - cohere
+    references:
+    - https://docs.cohere.com/docs/safety-modes
+  patterns:
+  - pattern-either:
+    - pattern: $CLIENT.chat(...)
+    - pattern: $CLIENT.chat_stream(...)
+  - pattern-inside: '$CLIENT = cohere.Client(...)
+
+      ...
+
+      '
+  - pattern-not-inside: "try:\n    ...\nexcept ...:\n    ...\n"
+- id: cohere-safety-mode-off-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: Cohere safety mode explicitly set to 'OFF', disabling all safety guardrails.
+    Use 'STRICT' or 'CONTEXTUAL' instead. See https://docs.cohere.com/docs/safety-modes
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - cohere
+    references:
+    - https://docs.cohere.com/docs/safety-modes
+  pattern: '$CLIENT.chat({..., safetyMode: "OFF", ...})
+
+    '
+- id: cohere-safety-mode-off-python
+  languages:
+  - python
+  severity: ERROR
+  message: Cohere safety mode explicitly set to 'OFF', disabling all safety guardrails.
+    Use 'STRICT' or 'CONTEXTUAL' instead. See https://docs.cohere.com/docs/safety-modes
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - cohere
+    references:
+    - https://docs.cohere.com/docs/safety-modes
+  pattern: $CLIENT.chat(..., safety_mode="OFF", ...)
+- id: cohere-user-input-in-system-prompt-js
+  mode: taint
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: User input flows into the Cohere preamble/system prompt. This enables prompt
+    injection attacks where users can override system instructions. Validate and sanitize
+    user input, or keep preamble text hardcoded.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - cohere
+    references:
+    - https://docs.cohere.com/docs/safety-modes
+  pattern-sources:
+  - pattern: req.body.$F
+  - pattern: req.query.$F
+  - pattern: req.params.$F
+  - pattern: req.body
+  pattern-sinks:
+  - patterns:
+    - pattern: '$CLIENT.chat({..., preamble: $SINK, ...})
+
+        '
+    - focus-metavariable: $SINK
+- id: cohere-user-input-in-system-prompt-python
+  mode: taint
+  languages:
+  - python
+  severity: ERROR
+  message: User input flows into the Cohere preamble/system prompt. This enables prompt
+    injection attacks where users can override system instructions. Validate and sanitize
+    user input, or keep preamble text hardcoded.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - cohere
+    references:
+    - https://docs.cohere.com/docs/safety-modes
+  pattern-sources:
+  - pattern: request.args.get(...)
+  - pattern: request.form[...]
+  - pattern: request.form.get(...)
+  - pattern: request.json[...]
+  - pattern: request.json.get(...)
+  - pattern: request.data
+  - pattern: request.GET[...]
+  - pattern: request.GET.get(...)
+  - pattern: request.POST[...]
+  - pattern: request.POST.get(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: $CLIENT.chat(..., preamble=$SINK, ...)
+    - focus-metavariable: $SINK
+- id: gemini-hardcoded-api-key-go
+  languages:
+  - go
+  severity: ERROR
+  message: Google Gemini API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - gemini
+    - google
+    references:
+    - https://ai.google.dev/gemini-api/docs/api-key
+  patterns:
+  - pattern: option.WithAPIKey("$KEY")
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^AIza
+- id: gemini-hardcoded-api-key-java
+  languages:
+  - java
+  severity: ERROR
+  message: Google Gemini API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - gemini
+    - google
+    references:
+    - https://ai.google.dev/gemini-api/docs/api-key
+  patterns:
+  - pattern: $OBJ.apiKey("$KEY")
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^AIza
+- id: gemini-hardcoded-api-key-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: Google Gemini API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - gemini
+    - google
+    references:
+    - https://ai.google.dev/gemini-api/docs/api-key
+  patterns:
+  - pattern: new GoogleGenerativeAI("$KEY")
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^AIza
+- id: gemini-hardcoded-api-key-python
+  languages:
+  - python
+  severity: ERROR
+  message: Google Gemini API key is hardcoded in source code. Use environment variables
+    or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - gemini
+    - google
+    references:
+    - https://ai.google.dev/gemini-api/docs/api-key
+  pattern-either:
+  - patterns:
+    - pattern: genai.configure(api_key="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^AIza
+  - patterns:
+    - pattern: genai.Client(api_key="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^AIza
+  - patterns:
+    - pattern: $MOD.Client(api_key="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^AIza
+    - metavariable-regex:
+        metavariable: $MOD
+        regex: genai
+- id: gemini-missing-safety-settings-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: Gemini generate_content() called without safety_settings. Configure safety
+    settings to control content filtering thresholds for harmful content categories.
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - gemini
+    references:
+    - https://ai.google.dev/gemini-api/docs/safety-settings
+  patterns:
+  - pattern: $MODEL.generateContent({...})
+  - pattern-not: '$MODEL.generateContent({..., safetySettings: $S, ...})'
+- id: gemini-missing-safety-settings-python
+  languages:
+  - python
+  severity: WARNING
+  message: Gemini generate_content() called without safety_settings. Configure safety
+    settings to control content filtering thresholds for harmful content categories.
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - gemini
+    references:
+    - https://ai.google.dev/gemini-api/docs/safety-settings
+  patterns:
+  - pattern: $MODEL.generate_content(...)
+  - pattern-not: $MODEL.generate_content(..., safety_settings=$SETTINGS, ...)
+- id: gemini-missing-system-instruction-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: Gemini GenerativeModel created without 'systemInstruction' parameter. A
+    system instruction helps establish behavioral guidelines and safety boundaries
+    for the model. See https://ai.google.dev/gemini-api/docs/safety-guidance
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - gemini
+    references:
+    - https://ai.google.dev/gemini-api/docs/safety-guidance
+  patterns:
+  - pattern: $CLIENT.getGenerativeModel({...})
+  - pattern-not: '$CLIENT.getGenerativeModel({..., systemInstruction: $SI, ...})'
+- id: gemini-missing-system-instruction-python
+  languages:
+  - python
+  severity: WARNING
+  message: Gemini GenerativeModel created without 'system_instruction' parameter.
+    A system instruction helps establish behavioral guidelines and safety boundaries
+    for the model. See https://ai.google.dev/gemini-api/docs/safety-guidance
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - gemini
+    references:
+    - https://ai.google.dev/gemini-api/docs/safety-guidance
+  patterns:
+  - pattern: genai.GenerativeModel(...)
+  - pattern-not: genai.GenerativeModel(..., system_instruction=$SI, ...)
+- id: gemini-no-error-handling
+  languages:
+  - python
+  severity: WARNING
+  message: Google Gemini API call without error handling. Wrap API calls in try/except
+    to handle API errors and network issues gracefully.
+  metadata:
+    cwe: 'CWE-754: Improper Check for Unusual or Exceptional Conditions'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - gemini
+    references:
+    - https://ai.google.dev/gemini-api/docs/safety-guidance
+  patterns:
+  - pattern: $MODEL.generate_content(...)
+  - pattern-inside: '$MODEL = genai.GenerativeModel(...)
+
+      ...
+
+      '
+  - pattern-not-inside: "try:\n    ...\nexcept ...:\n    ...\n"
+- id: gemini-user-input-in-system-prompt-js
+  mode: taint
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: User input flows into the Gemini system instruction. This enables prompt
+    injection attacks where users can override system instructions. Validate and sanitize
+    user input, or keep system instructions hardcoded.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - gemini
+    references:
+    - https://ai.google.dev/docs
+  pattern-sources:
+  - pattern: req.body.$F
+  - pattern: req.query.$F
+  - pattern: req.params.$F
+  - pattern: req.body
+  pattern-sinks:
+  - patterns:
+    - pattern: '$CLIENT.getGenerativeModel({..., systemInstruction: $SINK, ...})
+
+        '
+    - focus-metavariable: $SINK
+- id: gemini-user-input-in-system-prompt-python
+  mode: taint
+  languages:
+  - python
+  severity: ERROR
+  message: User input flows into the Gemini system instruction. This enables prompt
+    injection attacks where users can override system instructions. Validate and sanitize
+    user input, or keep system instructions hardcoded.
+  metadata:
+    cwe: 'CWE-77: Command Injection'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - gemini
+    references:
+    - https://ai.google.dev/docs
+  pattern-sources:
+  - pattern: request.args.get(...)
+  - pattern: request.form[...]
+  - pattern: request.form.get(...)
+  - pattern: request.json[...]
+  - pattern: request.json.get(...)
+  - pattern: request.data
+  - pattern: request.GET[...]
+  - pattern: request.GET.get(...)
+  - pattern: request.POST[...]
+  - pattern: request.POST.get(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: genai.GenerativeModel(..., system_instruction=$SINK, ...)
+    - focus-metavariable: $SINK
+- id: hooks-dns-exfiltration-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: DNS lookup command uses a variable in the hostname, which could exfiltrate
+    sensitive data via DNS queries. In Claude Code and Cursor hooks, this pattern
+    can leak secrets or environment data to attacker-controlled domains. Use static
+    hostnames only in DNS commands.
+  metadata:
+    cwe: 'CWE-201: Insertion of Sensitive Information Into Sent Data'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  paths:
+    include:
+    - '*.sh'
+    - '*.bash'
+  pattern-regex: \b(ping|nslookup|dig|host)\s+.*\$
+- id: hooks-no-input-validation-bash
+  languages:
+  - bash
+  severity: WARNING
+  message: Piping untrusted input directly to eval, bash, or sh is dangerous in Claude
+    Code and Cursor hooks. Validate and sanitize input before executing it.
+  metadata:
+    cwe: 'CWE-1287: Improper Validation of Specified Type of Input'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  pattern-either:
+  - pattern: eval $...ARGS
+  - pattern: echo $...ARGS | bash
+  - pattern: echo $...ARGS | sh
+- id: hooks-no-input-validation-python
+  languages:
+  - python
+  severity: WARNING
+  message: Claude Code and Cursor hook reads stdin without input validation. Wrap
+    json.loads/json.load calls in try/except to handle malformed or unexpected input
+    gracefully.
+  metadata:
+    cwe: 'CWE-1287: Improper Validation of Specified Type of Input'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  patterns:
+  - pattern-either:
+    - pattern: json.loads(sys.stdin.read())
+    - pattern: json.load(sys.stdin)
+  - pattern-not-inside: "try:\n    ...\nexcept ...:\n    ...\n"
+- id: hooks-path-traversal-bash
+  mode: taint
+  languages:
+  - bash
+  severity: ERROR
+  message: Hook input flows into a file path without validation. Claude Code and Cursor
+    hooks receive JSON input that may contain user-controlled paths. An attacker could
+    craft input with path traversal sequences (e.g., '../../etc/passwd') to read,
+    modify, or delete arbitrary files. Use realpath or readlink -f to resolve and
+    validate paths before file operations.
+  metadata:
+    cwe: 'CWE-22: Improper Limitation of a Pathname to a Restricted Directory (''Path
+      Traversal'')'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  pattern-sources:
+  - pattern: '$VAR=$(... | jq ...)
+
+      '
+  pattern-sinks:
+  - patterns:
+    - pattern-either:
+      - pattern: cat $SINK
+      - pattern: rm $SINK
+      - pattern: cp $SINK ...
+      - pattern: mv $SINK ...
+    - pattern-not-inside: '$X=$(... | jq ...)
+
+        '
+  pattern-sanitizers:
+  - pattern: realpath ...
+  - pattern: readlink -f ...
+- id: hooks-path-traversal-python
+  mode: taint
+  languages:
+  - python
+  severity: ERROR
+  message: Hook input flows into a file path without validation. Claude Code and Cursor
+    hooks receive JSON input that may contain user-controlled paths. An attacker could
+    craft input with path traversal sequences (e.g., '../../etc/passwd') to read,
+    modify, or delete arbitrary files. Use os.path.realpath() or os.path.abspath()
+    to resolve and validate paths before file operations.
+  metadata:
+    cwe: 'CWE-22: Improper Limitation of a Pathname to a Restricted Directory (''Path
+      Traversal'')'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  pattern-sources:
+  - pattern: json.loads(...)
+  - pattern: json.load(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: open($SINK, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: os.remove($SINK)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: os.unlink($SINK)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: shutil.copy($SINK, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: shutil.move($SINK, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: pathlib.Path($SINK)
+    - focus-metavariable: $SINK
+  pattern-sanitizers:
+  - pattern: os.path.realpath(...)
+  - pattern: os.path.abspath(...)
+- id: hooks-relative-script-path-bash
+  languages:
+  - bash
+  severity: WARNING
+  message: Relative path used for script invocation in hook. Use absolute paths or
+    environment variables like $CLAUDE_PROJECT_DIR, $CURSOR_PROJECT_DIR, or $HOME
+    to ensure the correct script is executed regardless of working directory.
+  metadata:
+    cwe: 'CWE-426: Untrusted Search Path'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  pattern-regex: (source|bash|sh|\.)\s+\./\S+
+- id: hooks-sensitive-file-access-bash
+  languages:
+  - generic
+  severity: WARNING
+  message: Hook input from jq flows into a file operation without checking for sensitive
+    files. Claude Code and Cursor hooks receive JSON input that may reference sensitive
+    files such as ~/.ssh/*, ~/.aws/credentials, or .env files. Filter or block access
+    to sensitive paths using realpath and a validation check before performing file
+    operations.
+  metadata:
+    cwe: 'CWE-538: Insertion of Sensitive Information into Externally-Accessible File
+      or Directory'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  paths:
+    include:
+    - '*.sh'
+    - '*.bash'
+  pattern-regex: \$\(.*\|\s*jq\b[^)]*\)[\s\S]*?\n\s*(cat|rm|cp|mv)\s+\$
+- id: hooks-sensitive-file-access-python
+  mode: taint
+  languages:
+  - python
+  severity: WARNING
+  message: Hook input flows into a file operation without checking for sensitive files.
+    Claude Code and Cursor hooks receive JSON input that may reference sensitive files
+    such as ~/.ssh/*, ~/.aws/credentials, or .env files. Filter or block access to
+    sensitive paths using a validation function like check_sensitive() or is_sensitive()
+    before performing file operations.
+  metadata:
+    cwe: 'CWE-538: Insertion of Sensitive Information into Externally-Accessible File
+      or Directory'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  pattern-sources:
+  - pattern: json.loads(...)
+  - pattern: json.load(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: open($SINK, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: os.remove($SINK)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: shutil.copy($SINK, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: shutil.move($SINK, ...)
+    - focus-metavariable: $SINK
+  pattern-sanitizers:
+  - pattern: validate_path(...)
+  - pattern: check_sensitive(...)
+  - pattern: is_sensitive(...)
+  - pattern: os.path.realpath(...)
+- id: hooks-unconditional-allow-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: Hook unconditionally allows tool execution by outputting a permissionDecision
+    of "allow" without any conditional check. This bypasses the entire permission
+    system. Add a conditional check to validate the tool or command before allowing.
+  metadata:
+    cwe: 'CWE-862: Missing Authorization'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  paths:
+    include:
+    - '*.sh'
+    - '*.bash'
+    - '*.py'
+  pattern-regex: permissionDecision.*allow
+- id: hooks-unquoted-variable-bash-taint
+  mode: taint
+  languages:
+  - bash
+  severity: ERROR
+  message: Untrusted input from stdin (e.g., via `cat | jq`) flows into a dangerous
+    command execution sink such as `eval`, `bash -c`, or `sh -c`. In Claude Code and
+    Cursor hooks, stdin contains JSON that may include user-controlled data. Passing
+    this data unquoted or unsanitized to command execution functions enables OS command
+    injection. Use safe alternatives like arrays or direct command invocation instead
+    of eval, and always quote variable expansions.
+  metadata:
+    cwe: 'CWE-78: Improper Neutralization of Special Elements used in an OS Command
+      (''OS Command Injection'')'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  pattern-sources:
+  - pattern: $(cat | jq ...)
+  - pattern: $(cat)
+  pattern-sinks:
+  - pattern: eval $...SINK
+  - pattern: bash -c $...SINK
+  - pattern: sh -c $...SINK
+  - pattern: exec $...SINK
+  - pattern: source $...SINK
+- id: hooks-unquoted-variable-bash-eval
+  languages:
+  - bash
+  severity: WARNING
+  message: Use of `eval` in a Claude Code or Cursor hook script is dangerous. The
+    `eval` command re-parses its arguments, which can lead to command injection if
+    any variable contains special characters or attacker-controlled data. Avoid `eval`
+    entirely; use arrays, direct command invocation, or other safe alternatives.
+  metadata:
+    cwe: 'CWE-78: Improper Neutralization of Special Elements used in an OS Command
+      (''OS Command Injection'')'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  pattern: eval $...ARGS
+- id: hooks-wget-pipe-bash-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: Remote script is fetched and piped directly to a shell interpreter. In
+    Claude Code and Cursor hooks, this enables remote code execution from untrusted
+    sources. Download the script first, inspect it, then execute it separately.
+  metadata:
+    cwe: 'CWE-829: Inclusion of Functionality from Untrusted Control Sphere'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  paths:
+    include:
+    - '*.sh'
+    - '*.bash'
+  pattern-regex: (curl|wget)\s+.*\|\s*(bash|sh|zsh)\b
+- id: huggingface-hardcoded-api-key-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: Hugging Face API token is hardcoded in source code. Use environment variables
+    or a secrets manager instead. See https://huggingface.co/docs/hub/en/security-tokens
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - huggingface
+    references:
+    - https://huggingface.co/docs/hub/en/security-tokens
+  patterns:
+  - pattern: new InferenceClient("$KEY", ...)
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^hf_
+- id: huggingface-hardcoded-api-key-python
+  languages:
+  - python
+  severity: ERROR
+  message: Hugging Face API token is hardcoded in source code. Use environment variables
+    or a secrets manager instead. See https://huggingface.co/docs/hub/en/security-tokens
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - huggingface
+    references:
+    - https://huggingface.co/docs/hub/en/security-tokens
+  pattern-either:
+  - patterns:
+    - pattern: InferenceClient(token="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^hf_
+  - patterns:
+    - pattern: InferenceClient(api_key="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^hf_
+  - patterns:
+    - pattern: AsyncInferenceClient(token="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^hf_
+  - patterns:
+    - pattern: AsyncInferenceClient(api_key="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^hf_
+  - patterns:
+    - pattern: AutoModel.from_pretrained(..., token="$KEY", ...)
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^hf_
+- id: huggingface-no-error-handling
+  languages:
+  - python
+  severity: WARNING
+  message: Hugging Face Inference API call without error handling. Wrap API calls
+    in try/except to handle InferenceTimeoutError, HfHubHTTPError, and network issues
+    gracefully.
+  metadata:
+    cwe: 'CWE-754: Improper Check for Unusual or Exceptional Conditions'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - huggingface
+    references:
+    - https://huggingface.co/docs/huggingface_hub/guides/inference
+  pattern-either:
+  - patterns:
+    - pattern: $CLIENT.chat_completion(...)
+    - pattern-inside: '$CLIENT = InferenceClient(...)
+
+        ...
+
+        '
+    - pattern-not-inside: "try:\n    ...\nexcept ...:\n    ...\n"
+  - patterns:
+    - pattern: $CLIENT.text_generation(...)
+    - pattern-inside: '$CLIENT = InferenceClient(...)
+
+        ...
+
+        '
+    - pattern-not-inside: "try:\n    ...\nexcept ...:\n    ...\n"
+- id: ide-settings-executable-path-generic
+  languages:
+  - generic
+  severity: WARNING
+  message: Executable path override detected in VS Code settings pointing to a project-relative
+    path. A malicious repository can override interpreter or tool paths in workspace
+    settings to execute arbitrary code when the project is opened. Use absolute system
+    paths instead of relative paths for executable settings, and review .vscode/settings.json
+    in untrusted repos.
+  metadata:
+    cwe: 'CWE-94: Improper Control of Generation of Code'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    technology:
+    - vscode
+    references:
+    - https://blog.vipyrsec.com/posts/idesaster/
+  paths:
+    include:
+    - '**/settings.json'
+    - '**/*.settings.json'
+  pattern-regex: '"[^"]*(?:executablePath|ExecutablePath|defaultInterpreterPath|pythonPath|terminal\.integrated\.shell\.\w+)"\s*:\s*"\.\.?/'
+- id: langchain-dangerous-exec-python
+  languages:
+  - python
+  severity: ERROR
+  message: Dangerous LangChain execution utility detected. PythonREPL, BashProcess,
+    PythonAstREPLTool, and LLMMathChain allow arbitrary code execution and should
+    not be used in production. If an LLM agent can invoke these tools, prompt injection
+    can lead to remote code execution.
+  metadata:
+    cwe: 'CWE-94: Improper Control of Generation of Code (''Code Injection'')'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - audit
+    likelihood: HIGH
+    impact: MEDIUM
+    technology:
+    - langchain
+    references:
+    - https://blog.trailofbits.com/2025/10/22/prompt-injection-to-rce-in-ai-agents/
+  mode: taint
+  pattern-sources:
+  - pattern: PythonREPL(...)
+  - pattern: PythonREPL()
+  - pattern: BashProcess(...)
+  - pattern: BashProcess()
+  - pattern: PythonAstREPLTool(...)
+  - pattern: PythonAstREPLTool()
+  pattern-sinks:
+  - pattern: $OBJ.run(...)
+- id: llm-api-key-in-source-go
+  languages:
+  - go
+  severity: ERROR
+  message: AI/LLM API key found hardcoded in source code. Detected key prefix matches
+    a known AI provider (OpenAI, Anthropic, Google, Hugging Face). Use environment
+    variables or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    - anthropic
+    - google
+    - huggingface
+    references:
+    - https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/
+  pattern-either:
+  - patterns:
+    - pattern: $VAR := "$KEY"
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9-]{20,}|sk-proj-[a-zA-Z0-9-]{20,}|AIza[a-zA-Z0-9_-]{30,}|hf_[a-zA-Z0-9]{20,})
+  - patterns:
+    - pattern: var $VAR = "$KEY"
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9-]{20,}|sk-proj-[a-zA-Z0-9-]{20,}|AIza[a-zA-Z0-9_-]{30,}|hf_[a-zA-Z0-9]{20,})
+- id: llm-api-key-in-source-java
+  languages:
+  - java
+  severity: ERROR
+  message: AI/LLM API key found hardcoded in source code. Detected key prefix matches
+    a known AI provider (OpenAI, Anthropic, Google, Hugging Face). Use environment
+    variables or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    - anthropic
+    - google
+    - huggingface
+    references:
+    - https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/
+  pattern-either:
+  - patterns:
+    - pattern: String $VAR = "$KEY";
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9-]{20,}|sk-proj-[a-zA-Z0-9-]{20,}|AIza[a-zA-Z0-9_-]{30,}|hf_[a-zA-Z0-9]{20,})
+  - patterns:
+    - pattern: final String $VAR = "$KEY";
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9-]{20,}|sk-proj-[a-zA-Z0-9-]{20,}|AIza[a-zA-Z0-9_-]{30,}|hf_[a-zA-Z0-9]{20,})
+- id: llm-api-key-in-source-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: AI/LLM API key found hardcoded in source code. Detected key prefix matches
+    a known AI provider (OpenAI, Anthropic, Google, Hugging Face). Use environment
+    variables or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    - anthropic
+    - google
+    - huggingface
+    references:
+    - https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/
+  pattern-either:
+  - patterns:
+    - pattern: const $VAR = "$KEY"
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9-]{20,}|sk-proj-[a-zA-Z0-9-]{20,}|AIza[a-zA-Z0-9_-]{30,}|hf_[a-zA-Z0-9]{20,})
+  - patterns:
+    - pattern: let $VAR = "$KEY"
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9-]{20,}|sk-proj-[a-zA-Z0-9-]{20,}|AIza[a-zA-Z0-9_-]{30,}|hf_[a-zA-Z0-9]{20,})
+  - patterns:
+    - pattern: var $VAR = "$KEY"
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9-]{20,}|sk-proj-[a-zA-Z0-9-]{20,}|AIza[a-zA-Z0-9_-]{30,}|hf_[a-zA-Z0-9]{20,})
+- id: llm-api-key-in-source-python
+  languages:
+  - python
+  severity: ERROR
+  message: AI/LLM API key found hardcoded in source code. Detected key prefix matches
+    a known AI provider (OpenAI, Anthropic, Google, Hugging Face). Use environment
+    variables or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    - anthropic
+    - google
+    - huggingface
+    references:
+    - https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/
+  patterns:
+  - pattern: $VAR = "$KEY"
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9-]{20,}|sk-proj-[a-zA-Z0-9-]{20,}|AIza[a-zA-Z0-9_-]{30,}|hf_[a-zA-Z0-9]{20,})
+- id: llm-api-key-in-source-ruby
+  languages:
+  - ruby
+  severity: ERROR
+  message: AI/LLM API key found hardcoded in source code. Detected key prefix matches
+    a known AI provider (OpenAI, Anthropic, Google, Hugging Face). Use environment
+    variables or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - openai
+    - anthropic
+    - google
+    - huggingface
+    references:
+    - https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/
+  patterns:
+  - pattern: $VAR = "$KEY"
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: ^(sk-[a-zA-Z0-9]{20,}|sk-ant-[a-zA-Z0-9-]{20,}|sk-proj-[a-zA-Z0-9-]{20,}|AIza[a-zA-Z0-9_-]{30,}|hf_[a-zA-Z0-9]{20,})
+- id: llm-output-to-exec-javascript
+  mode: taint
+  languages:
+  - javascript
+  - typescript
+  severity: ERROR
+  message: LLM API response data flows into a dangerous code execution function (eval,
+    new Function, child_process.exec). This enables code injection attacks where a
+    compromised or manipulated LLM response can execute arbitrary code on the host
+    system. Validate and sandbox LLM outputs before execution.
+  metadata:
+    cwe: 'CWE-94: Improper Control of Generation of Code (''Code Injection'')'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - openai
+    - anthropic
+    references:
+    - https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+  pattern-sources:
+  - pattern: $CLIENT.chat.completions.create(...)
+  - pattern: await $CLIENT.chat.completions.create(...)
+  - pattern: $CLIENT.messages.create(...)
+  - pattern: await $CLIENT.messages.create(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: eval($SINK)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: new Function($SINK)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: exec($SINK)
+    - focus-metavariable: $SINK
+- id: llm-output-to-exec-python
+  mode: taint
+  languages:
+  - python
+  severity: ERROR
+  message: LLM API response data flows into a dangerous code execution function (eval,
+    exec, subprocess, os.system). This enables code injection attacks where a compromised
+    or manipulated LLM response can execute arbitrary code on the host system. Validate
+    and sandbox LLM outputs before execution.
+  metadata:
+    cwe: 'CWE-94: Improper Control of Generation of Code (''Code Injection'')'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - openai
+    - anthropic
+    - gemini
+    references:
+    - https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+  pattern-sources:
+  - pattern: $CLIENT.chat.completions.create(...)
+  - pattern: $CLIENT.messages.create(...)
+  - pattern: $MODEL.generate_content(...)
+  - pattern: $CLIENT.chat(...)
+  pattern-sinks:
+  - patterns:
+    - pattern: eval($SINK)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: exec($SINK)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: subprocess.run($SINK, ..., shell=True)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: subprocess.call($SINK, ..., shell=True)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: subprocess.Popen($SINK, ..., shell=True)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: os.system($SINK)
+    - focus-metavariable: $SINK
+- id: mcp-command-injection-python
+  mode: taint
+  languages:
+  - python
+  severity: ERROR
+  message: User input from an MCP tool handler flows into a command execution sink
+    without sanitization. An attacker could inject arbitrary OS commands via tool
+    arguments. Use subprocess with a list of arguments (shell=False) or sanitize input
+    with shlex.quote() before passing to shell commands.
+  metadata:
+    cwe: 'CWE-78: Improper Neutralization of Special Elements used in an OS Command
+      (''OS Command Injection'')'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - mcp
+    references:
+    - https://modelcontextprotocol.io/specification/draft/basic/security_best_practices
+  pattern-sources:
+  - patterns:
+    - pattern: "@$SERVER.tool()\ndef $FUNC(..., $PARAM, ...):\n    ...\n"
+    - focus-metavariable: $PARAM
+  pattern-sinks:
+  - patterns:
+    - pattern: os.system($SINK)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: subprocess.run($SINK, ..., shell=True, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: subprocess.call($SINK, ..., shell=True, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: subprocess.Popen($SINK, ..., shell=True, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: eval($SINK)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: exec($SINK)
+    - focus-metavariable: $SINK
+  pattern-sanitizers:
+  - pattern: shlex.quote(...)
+- id: mcp-credential-in-response-python
+  languages:
+  - python
+  severity: WARNING
+  message: MCP tool returns a dictionary containing credential-like keys such as api_key,
+    password, secret, or token. Exposing credentials in tool responses risks leaking
+    them to the LLM context or logs. Remove sensitive fields before returning data
+    from MCP tools.
+  metadata:
+    cwe: 'CWE-522: Insufficiently Protected Credentials'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    technology:
+    - mcp
+    references:
+    - https://modelcontextprotocol.io/specification/draft/basic/security_best_practices
+  patterns:
+  - pattern-inside: "@$SERVER.tool()\ndef $FUNC(...):\n    ...\n"
+  - pattern-either:
+    - pattern: 'return {..., "api_key": $VAL, ...}'
+    - pattern: 'return {..., "password": $VAL, ...}'
+    - pattern: 'return {..., "secret": $VAL, ...}'
+    - pattern: 'return {..., "token": $VAL, ...}'
+    - pattern: 'return {..., "access_token": $VAL, ...}'
+    - pattern: 'return {..., "secret_key": $VAL, ...}'
+    - pattern: 'return {..., "private_key": $VAL, ...}'
+- id: mcp-hardcoded-config-secret-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: Plaintext API key or token detected in MCP configuration file. Hardcoded
+    secrets in config files risk exposure through version control or file sharing.
+    Use environment variable references or a secrets manager instead.
+  metadata:
+    cwe: 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: MEDIUM
+    technology:
+    - mcp
+    references:
+    - https://modelcontextprotocol.io/specification/draft/basic/security_best_practices
+  paths:
+    include:
+    - '*mcp*.json'
+    - claude_desktop_config.json
+  pattern-either:
+  - pattern-regex: :\s*"sk-[a-zA-Z0-9]{20,}"
+  - pattern-regex: :\s*"sk-ant-[a-zA-Z0-9\-]{20,}"
+  - pattern-regex: :\s*"sk-proj-[a-zA-Z0-9\-]{20,}"
+  - pattern-regex: :\s*"hf_[a-zA-Z0-9]{20,}"
+  - pattern-regex: :\s*"AIza[a-zA-Z0-9\-_]{20,}"
+- id: mcp-ssrf-python
+  mode: taint
+  languages:
+  - python
+  severity: ERROR
+  message: User input from an MCP tool handler flows into an HTTP request URL without
+    validation. An attacker could supply internal network URLs to access internal
+    services (SSRF). Validate and restrict URLs with an allowlist or parse with urllib.parse.urlparse()
+    before making requests.
+  metadata:
+    cwe: 'CWE-918: Server-Side Request Forgery (SSRF)'
+    category: security
+    confidence: HIGH
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - mcp
+    references:
+    - https://modelcontextprotocol.io/specification/draft/basic/security_best_practices
+  pattern-sources:
+  - patterns:
+    - pattern: "@$SERVER.tool()\ndef $FUNC(..., $PARAM, ...):\n    ...\n"
+    - focus-metavariable: $PARAM
+  pattern-sinks:
+  - patterns:
+    - pattern: requests.get($SINK, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: requests.post($SINK, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: requests.put($SINK, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: requests.delete($SINK, ...)
+    - focus-metavariable: $SINK
+  - patterns:
+    - pattern: urllib.request.urlopen($SINK)
+    - focus-metavariable: $SINK
+  pattern-sanitizers:
+  - pattern: urllib.parse.urlparse(...)
+- id: mcp-tool-poisoning-generic
+  languages:
+  - generic
+  severity: ERROR
+  message: MCP tool docstring contains suspicious directives that may indicate tool
+    poisoning. Attackers can embed hidden instructions in tool descriptions to manipulate
+    LLM behavior, exfiltrate data, or access sensitive files. Review the tool description
+    for hidden instructions or social engineering.
+  metadata:
+    cwe: 'CWE-77: Improper Neutralization of Special Elements used in a Command (''Command
+      Injection'')'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - mcp
+    references:
+    - https://modelcontextprotocol.io/specification/draft/basic/security_best_practices
+  paths:
+    include:
+    - '*.py'
+  pattern-either:
+  - pattern-regex: '"""[^"]*<IMPORTANT>[^"]*"""'
+  - pattern-regex: '"""[^"]*~/\.ssh[^"]*"""'
+  - pattern-regex: '"""[^"]*~/\.cursor/mcp\.json[^"]*"""'
+  - pattern-regex: '"""[^"]*(?:/etc/shadow)[^"]*"""'
+  - pattern-regex: '"""[^"]*(?:read|cat|load|parse|open|access)\s+\.env[^"]*"""'
+  - pattern-regex: '"""[^"]*do not mention[^"]*"""'
+  - pattern-regex: '"""[^"]*do not tell the user[^"]*"""'
+  - pattern-regex: '"""[^"]*ignore previous instructions[^"]*"""'
+- id: cohere-missing-safety-mode-javascript
+  languages:
+  - javascript
+  - typescript
+  severity: WARNING
+  message: Cohere chat called without explicit 'safety_mode' parameter. Set safetyMode
+    to 'STRICT' or 'CONTEXTUAL' to explicitly configure content safety guardrails.
+    See https://docs.cohere.com/docs/safety-modes
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - cohere
+    references:
+    - https://docs.cohere.com/docs/safety-modes
+  patterns:
+  - pattern: $CLIENT.chat({...})
+  - pattern-not: '$CLIENT.chat({..., safetyMode: $SM, ...})'
+  - pattern-inside: '$CLIENT = new CohereClient(...)
+
+      ...
+
+      '
+- id: cohere-missing-safety-mode-python
+  languages:
+  - python
+  severity: WARNING
+  message: Cohere chat called without explicit 'safety_mode' parameter. Set safety_mode
+    to 'STRICT' or 'CONTEXTUAL' to explicitly configure content safety guardrails.
+    See https://docs.cohere.com/docs/safety-modes
+  metadata:
+    cwe: 'CWE-1188: Initialization with an Insecure Default'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: HIGH
+    technology:
+    - cohere
+    references:
+    - https://docs.cohere.com/docs/safety-modes
+  patterns:
+  - pattern: $CLIENT.chat(...)
+  - pattern-not: $CLIENT.chat(..., safety_mode=$SM, ...)
+  - pattern-inside: '$CLIENT = cohere.$CLIENTCLASS(...)
+
+      ...
+
+      '
+- id: hooks-stop-missing-active-check-generic
+  languages:
+  - generic
+  severity: WARNING
+  message: Stop hook outputs a "block" decision. Ensure you check stop_hook_active
+    first and exit 0 if true, otherwise the hook will cause an infinite loop by blocking
+    its own stop attempts.
+  metadata:
+    cwe: 'CWE-835: Loop with Unreachable Exit Condition'
+    category: security
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    technology:
+    - claude-code
+    - cursor
+    references:
+    - https://docs.anthropic.com/en/docs/claude-code/hooks
+    - https://cursor.com/docs/agent/hooks
+  paths:
+    include:
+    - '*.sh'
+    - '*.bash'
+  pattern-regex: '"decision".*"block"'
+- id: mcp-typosquatted-tool-name-python
+  languages:
+  - python
+  severity: WARNING
+  message: MCP tool name appears to be a typosquatted variant of a well-known tool
+    (e.g. "githbu_search" instead of "github_search", "filesytem_read" instead of
+    "filesystem_read"). Typosquatting is a documented supply chain attack vector against
+    MCP skill registries. Rename the tool to its canonical spelling, or audit and
+    document why a near-duplicate name is required.
+  metadata:
+    cwe: 'CWE-1357: Reliance on Insufficiently Trustworthy Component'
+    category: security
+    confidence: MEDIUM
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: HIGH
+    technology:
+    - mcp
+    references:
+    - https://github.com/Agent-Threat-Rule/agent-threat-rules
+    - https://modelcontextprotocol.io/specification/draft/basic/security_best_practices
+  pattern-either:
+  - patterns:
+    - pattern-either:
+      - pattern: "@$MCP.tool()\ndef $NAME(...):\n    ...\n"
+      - pattern: "@$MCP.tool(name=$STR, ...)\ndef $X(...):\n    ...\n"
+    - metavariable-regex:
+        metavariable: $NAME
+        regex: ^(?:filesytem|filsystem|file_sytem|flie_system|filessystem|filesystm|filsystm|filesysem|gtihub|githbu|gihtub|gthub|g1thub|githuub|guthub|databse|databaes|dtabase|datbase|databasse|databasee|dataase)_(?:read|write|list|delete|search|api|commit|pr|issue|repo|query|exec|connect)
+  - patterns:
+    - pattern: "@$MCP.tool(name=$STR, ...)\ndef $X(...):\n    ...\n"
+    - metavariable-regex:
+        metavariable: $STR
+        regex: ^["'](?:filesytem|filsystem|file_sytem|flie_system|filessystem|filesystm|filsystm|filesysem|gtihub|githbu|gihtub|gthub|g1thub|githuub|guthub|databse|databaes|dtabase|datbase|databasse|databasee|dataase)[-_](?:read|write|list|delete|search|api|commit|pr|issues?|repos?|query|exec|connect)["']$
+- id: detect-openai
+  languages:
+  - csharp
+  severity: INFO
+  message: 'Possibly found usage of AI: OpenAI'
+  pattern-either:
+  - pattern: using OpenAI
+  - pattern: (ChatClient $CLIENT)
+  - pattern: (ChatClient $CLIENT).$FUNC(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-gemini
+  languages:
+  - dart
+  severity: INFO
+  message: 'Possibly found usage of AI: Gemini'
+  pattern-either:
+  - pattern: import 'package:google_generative_ai';
+  - pattern: final $MODEL = GenerativeModel(...);
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-generic-ai-anthprop
+  languages:
+  - generic
+  severity: INFO
+  message: 'Possibly found usage of AI: Anthropic'
+  pattern-either:
+  - pattern: anthropic
+  - pattern: Anthropic
+  - pattern: claude
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-generic-ai-api
+  languages:
+  - generic
+  severity: INFO
+  message: 'Possibly found usage of AI: HTTP Request'
+  pattern-either:
+  - pattern: /chat/completions
+  - pattern: api.openai.com
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-generic-ai-gem
+  languages:
+  - generic
+  severity: INFO
+  message: 'Possibly found usage of AI: Gemini'
+  pattern-either:
+  - pattern: google/generative-ai
+  - pattern: GoogleGenerativeAI
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-generic-ai-oai
+  languages:
+  - generic
+  severity: INFO
+  message: 'Possibly found usage of AI: OpenAI'
+  pattern-either:
+  - pattern: openai
+  - pattern: OpenAI
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-gemini
+  languages:
+  - go
+  severity: INFO
+  message: 'Possibly found usage of AI: Gemini'
+  pattern-either:
+  - pattern: import "github.com/google/generative-ai-go"
+  - pattern: genai.NewClient(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-openai
+  languages:
+  - go
+  severity: INFO
+  message: 'Possibly found usage of AI: OpenAI'
+  pattern-either:
+  - pattern: import "github.com/sashabaranov/go-openai"
+  - pattern: gogpt.NewClient(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-gemini
+  languages:
+  - kotlin
+  severity: INFO
+  message: 'Possibly found usage of AI: Gemini'
+  pattern-either:
+  - pattern: import com.google.ai
+  - pattern: GenerativeModel(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-anthropic
+  languages:
+  - python
+  severity: INFO
+  message: 'Possibly found usage of AI: Anthropic'
+  pattern-either:
+  - pattern: import anthropic
+  - pattern: from anthropic import $ANYTHING
+  - pattern: Anthropic(...)
+  - pattern: anthropic.Anthropic(...)
+  - pattern: $CLIENT.messages.$FUNC(...,model=...,...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-gemini
+  languages:
+  - python
+  severity: INFO
+  message: 'Possibly found usage of AI: Gemini'
+  pattern-either:
+  - pattern: import google.generativeai
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-huggingface
+  languages:
+  - python
+  severity: INFO
+  message: 'Possibly found usage of AI: HuggingFace'
+  pattern-either:
+  - pattern: import huggingface_hub
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-langchain
+  languages:
+  - python
+  severity: INFO
+  message: 'Possibly found usage of AI tooling: LangChain'
+  pattern-either:
+  - pattern: import langchain_openai
+  - pattern: ChatOpenAI(...)
+  - pattern: import langchain_community
+  - pattern: Ollama(...)
+  - pattern: import langchain_anthropic
+  - pattern: ChatAnthropic(...)
+  - pattern: import langchain_cohere
+  - pattern: ChatCohere(...)
+  - pattern: import langchain_core
+  - pattern: import langchain
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-mistral
+  languages:
+  - python
+  severity: INFO
+  message: 'Possibly found usage of AI: Mistral'
+  pattern-either:
+  - pattern: import mistralai
+  - pattern: MistralClient(...)
+  - pattern: $CLIENT.chat(...,model=...,...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-openai
+  languages:
+  - python
+  severity: INFO
+  message: 'Possibly found usage of AI: OpenAI'
+  pattern-either:
+  - pattern: import openai
+  - pattern: from openai import $ANYTHING
+  - pattern: OpenAI(...)
+  - pattern: $CLIENT.chat.completions.$FUNC(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-pytorch
+  languages:
+  - python
+  severity: INFO
+  message: 'Possibly found usage of AI tooling: PyTorch'
+  pattern-either:
+  - pattern: import torch
+  - pattern: torch.$FUNC(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-tensorflow
+  languages:
+  - python
+  severity: INFO
+  message: 'Possibly found usage of AI tooling: Tensorflow'
+  pattern-either:
+  - pattern: import tensorflow
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-apple-core-ml
+  languages:
+  - swift
+  severity: INFO
+  message: 'Possibly found usage of AI: Apple CoreML'
+  pattern-either:
+  - pattern: VNCoreMLModel(...)
+  - pattern: MLModelConfiguration(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-gemini
+  languages:
+  - swift
+  severity: INFO
+  message: 'Possibly found usage of AI: Gemini'
+  pattern-either:
+  - pattern: import GoogleGenerativeAI
+  - pattern: GenerativeModel(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-anthropic
+  languages:
+  - js
+  - ts
+  severity: INFO
+  message: 'Possibly found usage of AI: Anthropic'
+  pattern-either:
+  - pattern: import "@anthropic-ai"
+  - pattern: import $ANYTHING from "@anthropic-ai";
+  - pattern: new Anthropic(...)
+  - pattern: anthropic.messages.$FUNC(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-gemini
+  languages:
+  - js
+  - ts
+  severity: INFO
+  message: 'Possibly found usage of AI: Gemini'
+  pattern-either:
+  - pattern: import "@google/generative-ai"
+  - pattern: import $ANYTHING from "@google/generative-ai";
+  - pattern: new GoogleGenerativeAI(...)
+  - pattern: $GENAI.getGenerativeModel(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-mistral
+  languages:
+  - js
+  - ts
+  severity: INFO
+  message: 'Possibly found usage of AI: Mistral'
+  pattern-either:
+  - pattern: import "@mistralai"
+  - pattern: new MistralClient(...)
+  - pattern: '$CLIENT.chat({model: ...})'
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-openai
+  languages:
+  - js
+  - ts
+  severity: INFO
+  message: 'Possibly found usage of AI: OpenAI'
+  pattern-either:
+  - pattern: import "openai"
+  - pattern: import $ANYTHING from "openai";
+  - pattern: new OpenAI(...)
+  - pattern: $CLIENT.chat.completions.$FUNC(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-promptfoo
+  languages:
+  - js
+  - ts
+  severity: INFO
+  message: 'Possibly found usage of AI tooling: promptfoo'
+  pattern-either:
+  - pattern: import "promptfoo"
+  - pattern: promptfoo.evaluate(...)
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW
+- id: detect-vercel-ai
+  languages:
+  - js
+  - ts
+  severity: INFO
+  message: 'Possibly found usage of AI: VercelAI'
+  pattern-either:
+  - pattern: import "ai"
+  - pattern: import "@ai-sdk"
+  - pattern: generateText({model:...})
+  - pattern: generateText({prompt:...})
+  metadata:
+    references:
+    - https://semgrep.dev/blog/2024/detecting-shadow-ai
+    category: maintainability
+    technology:
+    - genAI
+    - LLMs
+    confidence: LOW

@@ -1,0 +1,4592 @@
+rules:
+- id: event-binding-payload-with-hyphen
+  languages:
+  - yaml
+  severity: WARNING
+  message: The parameter `$VALUE` to this WorkflowEventBinding includes hyphens, which
+    will, very confusingly, throw an error when Argo Workflows tries to invoke the
+    workflow. Set the payload value to use underscores instead.
+  metadata:
+    category: correctness
+    references:
+    - https://argoproj.github.io/argo-workflows/variables/#expression
+    technology:
+    - argo
+    - argo-workflows
+  match:
+    all:
+    - inside: 'apiVersion: argoproj.io/v1alpha1
+
+        kind: WorkflowEventBinding
+
+        ...
+
+        '
+    - inside: "spec:\n  ...\n  submit:\n    ...\n    arguments:\n      ...\n     \
+        \ parameters:\n        ...\n"
+    - 'event: $VALUE
+
+      '
+    where:
+    - metavariable: $VALUE
+      regex: payload\..*-.*
+- id: argo-workflow-parameter-command-injection
+  message: Using input or workflow parameters in here-scripts can lead to command
+    injection or code injection. Convert the parameters to env variables instead.
+  languages:
+  - yaml
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-78: Improper Neutralization of Special Elements used in an OS Command (''OS
+      Command Injection'')'
+    - 'CWE-94: Improper Control of Generation of Code (''Code Injection'')'
+    owasp:
+    - "A03:2021 \u2013 Injection"
+    confidence: MEDIUM
+    likelihood: MEDIUM
+    impact: HIGH
+    subcategory:
+    - vuln
+    references:
+    - https://github.com/argoproj/argo-workflows/issues/5061
+    - https://github.com/argoproj/argo-workflows/issues/5114#issue-808865370
+    technology:
+    - ci
+    - argo
+  severity: ERROR
+  patterns:
+  - pattern-inside: 'apiVersion: $VERSION
+
+      ...
+
+      '
+  - metavariable-regex:
+      metavariable: $VERSION
+      regex: (argoproj.io.*)
+  - pattern-either:
+    - patterns:
+      - pattern-inside: "command:\n  ...\n  - $LANG\n  ...\n...\nsource:\n  $SCRIPT\n"
+      - metavariable-regex:
+          metavariable: $LANG
+          regex: .*(sh|bash|ksh|csh|tcsh|zsh|python|python3|node|perl|ruby|php|lua|awk|sed|powershell|fish|dash|R|grooby|scala|clj|elixir|coffee|dart|haskell|ocaml).*
+      - metavariable-pattern:
+          metavariable: $SCRIPT
+          pattern-either:
+          - pattern-regex: (.*{{.*inputs.parameters.*}}.*)
+          - pattern-regex: (.*{{.*workflow.parameters.*}}.*)
+      - focus-metavariable: $SCRIPT
+    - patterns:
+      - pattern-either:
+        - pattern-inside: "container:\n  ...\n  command: $LANG\n  ...\n  args: $PARAM\n"
+        - pattern-inside: "containerSet:\n  ...\n  containers:\n    - ...\n      command:\
+            \ $LANG\n      ...\n      args: $PARAM\n"
+      - metavariable-regex:
+          metavariable: $LANG
+          regex: .*(sh|bash|ksh|csh|tcsh|zsh|python|python3|node|perl|ruby|php|lua|awk|sed|powershell|fish|dash|R|grooby|scala|clj|elixir|coffee|dart|haskell|ocaml).*
+      - metavariable-pattern:
+          metavariable: $PARAM
+          pattern-either:
+          - pattern-regex: (.*{{.*inputs.parameters.*}}.*)
+          - pattern-regex: (.*{{.*workflow.parameters.*}}.*)
+      - focus-metavariable: $PARAM
+- id: exposing-docker-socket-volume
+  patterns:
+  - pattern-inside: 'version: ...
+
+      ...
+
+      '
+  - pattern-either:
+    - pattern: "volumes:\n  - ...\n  - /var/run/docker.sock:/var/run/docker.sock\n\
+        \  - ...\n"
+    - pattern: "volumes:\n  - ...\n  - /run/docker.sock:/run/docker.sock\n  - ...\n"
+    - pattern: "volumes:\n  - ...\n  - /var/run/docker.sock:/run/docker.sock\n  -\
+        \ ...\n"
+    - pattern: "volumes:\n  - ...\n  - /run/docker.sock:/var/run/docker.sock\n  -\
+        \ ...\n"
+    - pattern: "volumes:\n  - ...\n  - /var/run/docker.sock\n  - ...\n"
+    - pattern: "volumes:\n  - ...\n  - /run/docker.sock\n  - ...\n"
+    - pattern: "volumes:\n  - ...\n  - ...\n    source: /var/run/docker.sock\n   \
+        \ ...\n  - ...\n"
+    - pattern: "volumes:\n  - ...\n  - ...\n    source: /run/docker.sock\n    ...\n\
+        \  - ...\n"
+  message: Exposing host's Docker socket to containers via a volume. The owner of
+    this socket is root. Giving someone access to it is equivalent to giving unrestricted
+    root access to your host. Remove 'docker.sock' from volumes to prevent this.
+  metadata:
+    references:
+    - https://docs.docker.com/compose/compose-file/compose-file-v3/#volume-configuration-reference
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-do-not-expose-the-docker-daemon-socket-even-to-the-containers
+    category: security
+    technology:
+    - docker-compose
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A06:2017 - Security Misconfiguration
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: LOW
+  languages:
+  - yaml
+  severity: WARNING
+- id: no-new-privileges
+  patterns:
+  - pattern-inside: "version: ...\n...\nservices:\n  ...\n"
+  - pattern: "$SERVICE:\n  ...\n  image: ...\n"
+  - pattern-not: "$SERVICE:\n  ...\n  image: ...\n  ...\n  security_opt:\n    - ...\n\
+      \    - no-new-privileges:true\n    - ...\n"
+  - focus-metavariable: $SERVICE
+  message: Service '$SERVICE' allows for privilege escalation via setuid or setgid
+    binaries. Add 'no-new-privileges:true' in 'security_opt' to prevent this.
+  metadata:
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://raesene.github.io/blog/2019/06/01/docker-capabilities-and-no-new-privs/
+    - https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-add-no-new-privileges-flag
+    category: security
+    technology:
+    - docker-compose
+    cwe2021-top25: true
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: LOW
+  languages:
+  - yaml
+  severity: WARNING
+- id: privileged-service
+  patterns:
+  - pattern-inside: "version: ...\n...\nservices:\n  ...\n  $SERVICE:\n    ...\n \
+      \   privileged: $TRUE\n"
+  - focus-metavariable: $TRUE
+  - metavariable-regex:
+      metavariable: $TRUE
+      regex: (true)
+  fix: 'false
+
+    '
+  message: Service '$SERVICE' is running in privileged mode. This grants the container
+    the equivalent of root capabilities on the host machine. This can lead to container
+    escapes, privilege escalation, and other security concerns. Remove the 'privileged'
+    key to disable this capability.
+  metadata:
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A06:2017 - Security Misconfiguration
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://www.trendmicro.com/en_us/research/19/l/why-running-a-privileged-container-in-docker-is-a-bad-idea.html
+    - https://containerjournal.com/topics/container-security/why-running-a-privileged-container-is-not-a-good-idea/
+    category: security
+    technology:
+    - docker-compose
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: HIGH
+    confidence: HIGH
+  languages:
+  - yaml
+  severity: WARNING
+- id: seccomp-confinement-disabled
+  patterns:
+  - pattern-inside: "version: ...\n...\nservices:\n  ...\n"
+  - pattern: "$SERVICE:\n  ...\n  image: ...\n  ...\n  security_opt:\n    - ...\n\
+      \    - seccomp:unconfined\n"
+  message: Service '$SERVICE' is explicitly disabling seccomp confinement. This runs
+    the service in an unrestricted state. Remove 'seccomp:unconfined' to prevent this.
+  metadata:
+    cwe:
+    - 'CWE-284: Improper Access Control'
+    references:
+    - https://docs.docker.com/engine/security/seccomp/
+    category: security
+    technology:
+    - docker-compose
+    owasp:
+    - A05:2017 - Broken Access Control
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: LOW
+  languages:
+  - yaml
+  severity: WARNING
+- id: selinux-separation-disabled
+  patterns:
+  - pattern-inside: "version: ...\n...\nservices:\n  ...\n"
+  - pattern: "$SERVICE:\n  ...\n  image: ...\n  ...\n  security_opt:\n    - ...\n\
+      \    - label:disable\n"
+  message: Service '$SERVICE' is explicitly disabling SELinux separation. This runs
+    the service as an unconfined type. Remove 'label:disable' to prevent this.
+  metadata:
+    cwe:
+    - 'CWE-284: Improper Access Control'
+    references:
+    - https://www.projectatomic.io/blog/2016/03/dwalsh_selinux_containers/
+    - https://docs.docker.com/engine/reference/run/#security-configuration
+    category: security
+    technology:
+    - docker-compose
+    owasp:
+    - A05:2017 - Broken Access Control
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: LOW
+  languages:
+  - yaml
+  severity: WARNING
+- id: writable-filesystem-service
+  patterns:
+  - pattern-inside: "version: ...\n...\nservices:\n  ...\n"
+  - pattern: "$SERVICE:\n  ...\n  image: ...\n  ...\n"
+  - pattern-not: "$SERVICE:\n  ...\n  image: ...\n  ...\n  read_only: true\n"
+  - focus-metavariable: $SERVICE
+  message: 'Service ''$SERVICE'' is running with a writable root filesystem. This
+    may allow malicious applications to download and run additional payloads, or modify
+    container files. If an application inside a container has to save something temporarily
+    consider using a tmpfs. Add ''read_only: true'' to this service to prevent this.'
+  metadata:
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://docs.docker.com/compose/compose-file/compose-file-v3/#domainname-hostname-ipc-mac_address-privileged-read_only-shm_size-stdin_open-tty-user-working_dir
+    - https://blog.atomist.com/security-of-docker-kubernetes/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only
+    category: security
+    technology:
+    - docker-compose
+    cwe2021-top25: true
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: LOW
+  languages:
+  - yaml
+  severity: WARNING
+- id: allowed-unsecure-commands
+  languages:
+  - yaml
+  severity: WARNING
+  message: The environment variable `ACTIONS_ALLOW_UNSECURE_COMMANDS` grants this
+    workflow permissions to use the `set-env` and `add-path` commands. There is a
+    vulnerability in these commands that could result in environment variables being
+    modified by an attacker. Depending on the use of the environment variable, this
+    could enable an attacker to, at worst, modify the system path to run a different
+    command than intended, resulting in arbitrary code execution. This could result
+    in stolen code or secrets. Don't use `ACTIONS_ALLOW_UNSECURE_COMMANDS`. Instead,
+    use Environment Files. See https://github.com/actions/toolkit/blob/main/docs/commands.md#environment-files
+    for more information.
+  metadata:
+    cwe:
+    - 'CWE-749: Exposed Dangerous Method or Function'
+    owasp: A06:2017 - Security Misconfiguration
+    references:
+    - https://github.blog/changelog/2020-10-01-github-actions-deprecating-set-env-and-add-path-commands/
+    - https://github.com/actions/toolkit/security/advisories/GHSA-mfwh-5m23-j46w
+    - https://github.com/actions/toolkit/blob/main/docs/commands.md#environment-files
+    category: security
+    technology:
+    - github-actions
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+  patterns:
+  - pattern-either:
+    - patterns:
+      - pattern-inside: '{env: ...}'
+      - pattern: 'ACTIONS_ALLOW_UNSECURE_COMMANDS: true'
+- id: curl-eval
+  languages:
+  - yaml
+  message: Data is being eval'd from a `curl` command. An attacker with control of
+    the server in the `curl` command could inject malicious code into the `eval`,
+    resulting in a system comrpomise. Avoid eval'ing untrusted data if you can. If
+    you must do this, consider checking the SHA sum of the content returned by the
+    server to verify its integrity.
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-78: Improper Neutralization of Special Elements used in an OS Command (''OS
+      Command Injection'')'
+    owasp:
+    - A01:2017 - Injection
+    - A03:2021 - Injection
+    - A05:2025 - Injection
+    references:
+    - https://docs.github.com/en/actions/learn-github-actions/security-hardening-for-github-actions#understanding-the-risk-of-script-injections
+    technology:
+    - github-actions
+    - bash
+    - curl
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: LOW
+  patterns:
+  - pattern-inside: 'steps: [...]'
+  - pattern-inside: "- run: ...\n  ...\n"
+  - pattern: 'run: $SHELL'
+  - metavariable-pattern:
+      language: bash
+      metavariable: $SHELL
+      patterns:
+      - pattern: '$DATA=<... curl ...>
+
+          ...
+
+          eval <... $DATA ...>
+
+          '
+  severity: ERROR
+- id: detect-shai-hulud-backdoor
+  languages:
+  - yaml
+  message: The Shai-hulud backdoor creates a purposefully vulnerable github action
+    with the name `discussion.yaml`.
+  paths:
+    include:
+    - '**/.github/workflows/discussion.yaml'
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-509: Replicating Malicious Code (Virus or Worm)'
+    owasp:
+    - A01:2017 - Injection
+    - A03:2021 - Injection
+    - A05:2025 - Injection
+    technology:
+    - github-actions
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: HIGH
+    confidence: HIGH
+    license: Semgrep Rules License v1.0. For more details, visit semgrep.dev/legal/rules-license
+    vulnerability_class:
+    - Command Injection
+    source_rule_url: https://www.wiz.io/blog/shai-hulud-2-0-ongoing-supply-chain-attack
+    references:
+    - https://www.aikido.dev/blog/shai-hulud-strikes-again-hitting-zapier-ensdomains
+  patterns:
+  - pattern-inside: 'steps: [...]'
+  - pattern-inside: "- run: ...\n  ...\n"
+  - pattern: 'run: $SHELL'
+  - metavariable-pattern:
+      language: generic
+      metavariable: $SHELL
+      patterns:
+      - pattern-either:
+        - pattern: ${{ github.event.issue.title }}
+        - pattern: ${{ github.event.issue.body }}
+        - pattern: ${{ github.event.pull_request.title }}
+        - pattern: ${{ github.event.pull_request.body }}
+        - pattern: ${{ github.event.comment.body }}
+        - pattern: ${{ github.event.review.body }}
+        - pattern: ${{ github.event.review_comment.body }}
+        - pattern: ${{ github.event.pages. ... .page_name}}
+        - pattern: ${{ github.event.head_commit.message }}
+        - pattern: ${{ github.event.head_commit.author.email }}
+        - pattern: ${{ github.event.head_commit.author.name }}
+        - pattern: ${{ github.event.commits ... .author.email }}
+        - pattern: ${{ github.event.commits ... .author.name }}
+        - pattern: ${{ github.event.pull_request.head.ref }}
+        - pattern: ${{ github.event.pull_request.head.label }}
+        - pattern: ${{ github.event.pull_request.head.repo.default_branch }}
+        - pattern: ${{ github.head_ref }}
+        - pattern: ${{ github.event.inputs ... }}
+        - pattern: ${{ github.event.discussion.title }}
+        - pattern: ${{ github.event.discussion.body }}
+        - pattern: ${{ inputs ... }}
+  severity: ERROR
+- id: gha-curl-pipe-shell
+  languages:
+  - yaml
+  message: "A `run:` step pipes the output of `curl` or `wget` directly into a shell\
+    \ interpreter. This is the \"curl | bash\" install pattern \u2014 if the remote\
+    \ server is compromised or the URL is hijacked, an attacker can execute arbitrary\
+    \ code in your CI runner. Consider downloading the file first, verifying its checksum\
+    \ or signature, and then executing it."
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-78: Improper Neutralization of Special Elements used in an OS Command (''OS
+      Command Injection'')'
+    owasp:
+    - A03:2021 - Injection
+    - A03:2025 - Injection
+    references:
+    - https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
+    - https://www.idontplaydarts.com/2016/04/detecting-curl-pipe-bash-server-side/
+    technology:
+    - github-actions
+    - bash
+    - curl
+    cwe2021-top25: true
+    cwe2022-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+  patterns:
+  - pattern-inside: 'steps: [...]'
+  - pattern-inside: "- run: ...\n  ...\n"
+  - pattern: 'run: $SHELL'
+  - metavariable-pattern:
+      language: bash
+      metavariable: $SHELL
+      patterns:
+      - pattern-either:
+        - pattern: curl ... | $CMD ...
+        - pattern: wget ... | $CMD ...
+      - metavariable-regex:
+          metavariable: $CMD
+          regex: ^(bash|sh|python3?|ruby|perl)$
+  severity: ERROR
+- id: gha-workflow-env-secret
+  languages:
+  - yaml
+  message: "A secret is exposed in the workflow-level `env:` block, making it available\
+    \ to every job and step in this workflow \u2014 including any untrusted code run\
+    \ in pull-request workflows. Scope secrets as narrowly as possible: prefer step-level\
+    \ `env:` so the secret is only available where it is actually needed."
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    owasp:
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    references:
+    - https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-secrets
+    - https://docs.github.com/en/actions/learn-github-actions/variables#defining-environment-variables-for-a-single-workflow
+    technology:
+    - github-actions
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+    confidence: MEDIUM
+  patterns:
+  - pattern-inside: "env:\n  ...\n"
+  - pattern-regex: \$\{\{\s*secrets\.
+  - pattern-not-inside: 'jobs: ...'
+  severity: WARNING
+- id: github-actions-mutable-action-tag
+  message: "GitHub Actions step uses a mutable tag or branch reference. Tags and branch\
+    \ names can be silently repointed by the action owner, enabling supply-chain attacks\
+    \ \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the\
+    \ reference to a full 40-character commit SHA instead, e.g. `uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608`."
+  severity: WARNING
+  languages:
+  - yaml
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-1357: Reliance on Insufficiently Trustworthy Component'
+    - 'CWE-353: Missing Support for Integrity Check'
+    owasp:
+    - A08:2021 - Software and Data Integrity Failures
+    - A08:2025 - Software and Data Integrity Failures
+    references:
+    - https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions
+    technology:
+    - github-actions
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+  patterns:
+  - pattern-inside: '{steps: ...}'
+  - pattern: 'uses: "$ACTION"
+
+      '
+  - metavariable-pattern:
+      metavariable: $ACTION
+      language: generic
+      patterns:
+      - pattern-not-regex: ^\./
+      - pattern-not-regex: ^docker://
+      - pattern-not-regex: '@[0-9a-f]{40}(\s|$)'
+- id: github-script-injection
+  languages:
+  - yaml
+  message: 'Using variable interpolation `${{...}}` with `github` context data in
+    a `actions/github-script`''s `script:` step could allow an attacker to inject
+    their own code into the runner. This would allow them to steal secrets and code.
+    `github` context data can have arbitrary user input and should be treated as untrusted.
+    Instead, use an intermediate environment variable with `env:` to store the data
+    and use the environment variable in the `run:` script. Be sure to use double-quotes
+    the environment variable, like this: "$ENVVAR".'
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-94: Improper Control of Generation of Code (''Code Injection'')'
+    owasp:
+    - A03:2021 - Injection
+    - A05:2025 - Injection
+    references:
+    - https://docs.github.com/en/actions/learn-github-actions/security-hardening-for-github-actions#understanding-the-risk-of-script-injections
+    - https://securitylab.github.com/research/github-actions-untrusted-input/
+    - https://github.com/actions/github-script
+    technology:
+    - github-actions
+    cwe2022-top25: true
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: HIGH
+    confidence: HIGH
+  patterns:
+  - pattern-inside: 'steps: [...]'
+  - pattern-inside: 'uses: $ACTION
+
+      ...
+
+      '
+  - pattern-inside: "with:\n  ...\n  script: ...\n  ...\n"
+  - pattern: 'script: $SHELL'
+  - metavariable-regex:
+      metavariable: $ACTION
+      regex: actions/github-script@.*
+  - metavariable-pattern:
+      language: generic
+      metavariable: $SHELL
+      patterns:
+      - pattern-either:
+        - pattern: ${{ ... github.event.issue.title ... }}
+        - pattern: ${{ ... github.event.issue.body ... }}
+        - pattern: ${{ ... github.event.pull_request.title ... }}
+        - pattern: ${{ ... github.event.pull_request.body ... }}
+        - pattern: ${{ ... github.event.comment.body ... }}
+        - pattern: ${{ ... github.event.review.body ... }}
+        - pattern: ${{ ... github.event.review_comment.body ... }}
+        - pattern: ${{ ... github.event.pages ... .page_name ... }}
+        - pattern: ${{ ... github.event.head_commit.message ... }}
+        - pattern: ${{ ... github.event.head_commit.author.email ... }}
+        - pattern: ${{ ... github.event.head_commit.author.name ... }}
+        - pattern: ${{ ... github.event.commits ... .author.email ... }}
+        - pattern: ${{ ... github.event.commits ... .author.name ... }}
+        - pattern: ${{ ... github.event.commits ... .message ... }}
+        - pattern: ${{ ... github.event.pull_request.head.ref ... }}
+        - pattern: ${{ ... github.event.pull_request.head.label ... }}
+        - pattern: ${{ ... github.event.pull_request.head.repo.default_branch ...
+            }}
+        - pattern: ${{ ... github.ref ... }}
+        - pattern: ${{ ... github.base_ref ... }}
+        - pattern: ${{ ... github.head_ref ... }}
+        - pattern: ${{ ... github.ref_name ... }}
+        - pattern: ${{ ... github.event.inputs ... }}
+        - pattern: ${{ ... github.event.discussion.title ... }}
+        - pattern: ${{ ... github.event.discussion.body ... }}
+        - pattern: ${{ ... github.event.workflow_run.head_branch ... }}
+        - pattern: ${{ ... github.event.workflow_run.head_commit.message ... }}
+        - pattern: ${{ ... github.event.milestone.title ... }}
+        - pattern: ${{ ... github.event.milestone.description ... }}
+        - pattern: ${{ ... github.event.project_card.note ... }}
+        - pattern: ${{ ... github.event.project.name ... }}
+        - pattern: ${{ ... github.event.project_column.name ... }}
+        - pattern: ${{ ... github.event.release.name ... }}
+        - pattern: ${{ ... github.event.release.body ... }}
+        - pattern: ${{ ... github.event.deployment.ref ... }}
+        - pattern: ${{ ... inputs ... }}
+      - pattern-not: ${{ ... github.event.issue.title && ... }}
+      - pattern-not: ${{ ... github.event.issue.body && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.title && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.body && ... }}
+      - pattern-not: ${{ ... github.event.comment.body && ... }}
+      - pattern-not: ${{ ... github.event.review.body && ... }}
+      - pattern-not: ${{ ... github.event.review_comment.body && ... }}
+      - pattern-not: ${{ ... github.event.pages ... .page_name && ... }}
+      - pattern-not: ${{ ... github.event.head_commit.message && ... }}
+      - pattern-not: ${{ ... github.event.head_commit.author.email && ... }}
+      - pattern-not: ${{ ... github.event.head_commit.author.name && ... }}
+      - pattern-not: ${{ ... github.event.commits ... .author.email && ... }}
+      - pattern-not: ${{ ... github.event.commits ... .author.name && ... }}
+      - pattern-not: ${{ ... github.event.commits ... .message && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.head.ref && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.head.label && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.head.repo.default_branch &&
+          ... }}
+      - pattern-not: ${{ ... github.ref && ... }}
+      - pattern-not: ${{ ... github.base_ref && ... }}
+      - pattern-not: ${{ ... github.head_ref && ... }}
+      - pattern-not: ${{ ... github.ref_name && ... }}
+      - pattern-not: ${{ ... github.event.inputs && ... }}
+      - pattern-not: ${{ ... github.event.discussion.title && ... }}
+      - pattern-not: ${{ ... github.event.discussion.body && ... }}
+      - pattern-not: ${{ ... github.event.workflow_run.head_branch && ... }}
+      - pattern-not: ${{ ... github.event.workflow_run.head_commit.message && ...
+          }}
+      - pattern-not: ${{ ... github.event.milestone.title && ... }}
+      - pattern-not: ${{ ... github.event.milestone.description && ... }}
+      - pattern-not: ${{ ... github.event.project_card.note && ... }}
+      - pattern-not: ${{ ... github.event.project.name && ... }}
+      - pattern-not: ${{ ... github.event.project_column.name && ... }}
+      - pattern-not: ${{ ... github.event.release.name && ... }}
+      - pattern-not: ${{ ... github.event.release.body && ... }}
+      - pattern-not: ${{ ... github.event.deployment.ref && ... }}
+  severity: ERROR
+- id: pull-request-target-code-checkout
+  languages:
+  - yaml
+  message: This GitHub Actions workflow file uses `pull_request_target` and checks
+    out code from the incoming pull request. When using `pull_request_target`, the
+    Action runs in the context of the target repository, which includes access to
+    all repository secrets. Normally, this is safe because the Action only runs code
+    from the target repository, not the incoming PR. However, by checking out the
+    incoming PR code, you're now using the incoming code for the rest of the action.
+    You may be inadvertently executing arbitrary code from the incoming PR with access
+    to repository secrets, which would let an attacker steal repository secrets. This
+    normally happens by running build scripts (e.g., `npm build` and `make`) or dependency
+    installation scripts (e.g., `python setup.py install`). Audit your workflow file
+    to make sure no code from the incoming PR is executed. Please see https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+    for additional mitigations.
+  metadata:
+    category: security
+    owasp:
+    - A08:2021 - Software and Data Integrity Failures
+    - A08:2025 - Software and Data Integrity Failures
+    cwe:
+    - 'CWE-829: Inclusion of Functionality from Untrusted Control Sphere'
+    references:
+    - https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+    - https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#pull_request_target
+    - https://github.com/justinsteven/advisories/blob/master/2021_github_actions_checkspelling_token_leak_via_advice_symlink.md
+    technology:
+    - github-actions
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+  patterns:
+  - pattern-either:
+    - pattern-inside: "on:\n  ...\n  pull_request_target: ...\n  ...\n...\n"
+    - pattern-inside: 'on: [..., pull_request_target, ...]
+
+        ...
+
+        '
+    - pattern-inside: 'on: pull_request_target
+
+        ...
+
+        '
+  - pattern-inside: "jobs:\n  ...\n  $JOBNAME:\n    ...\n    steps:\n      ...\n"
+  - pattern: "...\nuses: \"$ACTION\"\nwith:\n  ...\n  ref: $EXPR\n"
+  - metavariable-regex:
+      metavariable: $ACTION
+      regex: actions/checkout@.*
+  - metavariable-pattern:
+      language: generic
+      metavariable: $EXPR
+      patterns:
+      - pattern-inside: ${{ ... }}
+      - pattern-either:
+        - pattern: github.event.pull_request ...
+        - pattern: github.head_ref ...
+  severity: ERROR
+- id: run-shell-injection
+  languages:
+  - yaml
+  message: 'Using variable interpolation `${{...}}` with `github` context data in
+    a `run:` step could allow an attacker to inject their own code into the runner.
+    This would allow them to steal secrets and code. `github` context data can have
+    arbitrary user input and should be treated as untrusted. Instead, use an intermediate
+    environment variable with `env:` to store the data and use the environment variable
+    in the `run:` script. Be sure to use double-quotes the environment variable, like
+    this: "$ENVVAR".'
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-78: Improper Neutralization of Special Elements used in an OS Command (''OS
+      Command Injection'')'
+    owasp:
+    - A01:2017 - Injection
+    - A03:2021 - Injection
+    - A05:2025 - Injection
+    references:
+    - https://docs.github.com/en/actions/learn-github-actions/security-hardening-for-github-actions#understanding-the-risk-of-script-injections
+    - https://securitylab.github.com/research/github-actions-untrusted-input/
+    technology:
+    - github-actions
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: HIGH
+    impact: HIGH
+    confidence: HIGH
+  patterns:
+  - pattern-inside: 'steps: [...]'
+  - pattern-inside: "- run: ...\n  ...\n"
+  - pattern: 'run: $SHELL'
+  - metavariable-pattern:
+      language: generic
+      metavariable: $SHELL
+      patterns:
+      - pattern-either:
+        - pattern: ${{ ... github.event.issue.title ... }}
+        - pattern: ${{ ... github.event.issue.body ... }}
+        - pattern: ${{ ... github.event.pull_request.title ... }}
+        - pattern: ${{ ... github.event.pull_request.body ... }}
+        - pattern: ${{ ... github.event.comment.body ... }}
+        - pattern: ${{ ... github.event.review.body ... }}
+        - pattern: ${{ ... github.event.review_comment.body ... }}
+        - pattern: ${{ ... github.event.pages ... .page_name ... }}
+        - pattern: ${{ ... github.event.head_commit.message ... }}
+        - pattern: ${{ ... github.event.head_commit.author.email ... }}
+        - pattern: ${{ ... github.event.head_commit.author.name ... }}
+        - pattern: ${{ ... github.event.commits ... .author.email ... }}
+        - pattern: ${{ ... github.event.commits ... .author.name ... }}
+        - pattern: ${{ ... github.event.commits ... .message ... }}
+        - pattern: ${{ ... github.event.pull_request.head.ref ... }}
+        - pattern: ${{ ... github.event.pull_request.head.label ... }}
+        - pattern: ${{ ... github.event.pull_request.head.repo.default_branch ...
+            }}
+        - pattern: ${{ ... github.ref ... }}
+        - pattern: ${{ ... github.base_ref ... }}
+        - pattern: ${{ ... github.head_ref ... }}
+        - pattern: ${{ ... github.ref_name ... }}
+        - pattern: ${{ ... github.event.inputs ... }}
+        - pattern: ${{ ... github.event.discussion.title ... }}
+        - pattern: ${{ ... github.event.discussion.body ... }}
+        - pattern: ${{ ... github.event.workflow_run.head_branch ... }}
+        - pattern: ${{ ... github.event.workflow_run.head_commit.message ... }}
+        - pattern: ${{ ... github.event.milestone.title ... }}
+        - pattern: ${{ ... github.event.milestone.description ... }}
+        - pattern: ${{ ... github.event.project_card.note ... }}
+        - pattern: ${{ ... github.event.project.name ... }}
+        - pattern: ${{ ... github.event.project_column.name ... }}
+        - pattern: ${{ ... github.event.release.name ... }}
+        - pattern: ${{ ... github.event.release.body ... }}
+        - pattern: ${{ ... github.event.deployment.ref ... }}
+        - pattern: ${{ ... inputs ... }}
+      - pattern-not: ${{ ... github.event.issue.title && ... }}
+      - pattern-not: ${{ ... github.event.issue.body && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.title && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.body && ... }}
+      - pattern-not: ${{ ... github.event.comment.body && ... }}
+      - pattern-not: ${{ ... github.event.review.body && ... }}
+      - pattern-not: ${{ ... github.event.review_comment.body && ... }}
+      - pattern-not: ${{ ... github.event.pages ... .page_name && ... }}
+      - pattern-not: ${{ ... github.event.head_commit.message && ... }}
+      - pattern-not: ${{ ... github.event.head_commit.author.email && ... }}
+      - pattern-not: ${{ ... github.event.head_commit.author.name && ... }}
+      - pattern-not: ${{ ... github.event.commits ... .author.email && ... }}
+      - pattern-not: ${{ ... github.event.commits ... .author.name && ... }}
+      - pattern-not: ${{ ... github.event.commits ... .message && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.head.ref && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.head.label && ... }}
+      - pattern-not: ${{ ... github.event.pull_request.head.repo.default_branch &&
+          ... }}
+      - pattern-not: ${{ ... github.event.workflow_run.head_commit.message && ...
+          }}
+      - pattern-not: ${{ ... github.ref && ... }}
+      - pattern-not: ${{ ... github.base_ref && ... }}
+      - pattern-not: ${{ ... github.head_ref && ... }}
+      - pattern-not: ${{ ... github.ref_name && ... }}
+      - pattern-not: ${{ ... github.event.inputs && ... }}
+      - pattern-not: ${{ ... github.event.discussion.title && ... }}
+      - pattern-not: ${{ ... github.event.discussion.body && ... }}
+      - pattern-not: ${{ ... github.event.workflow_run.head_branch && ... }}
+      - pattern-not: ${{ ... github.event.milestone.title && ... }}
+      - pattern-not: ${{ ... github.event.milestone.description && ... }}
+      - pattern-not: ${{ ... github.event.project_card.note && ... }}
+      - pattern-not: ${{ ... github.event.project.name && ... }}
+      - pattern-not: ${{ ... github.event.project_column.name && ... }}
+      - pattern-not: ${{ ... github.event.release.name && ... }}
+      - pattern-not: ${{ ... github.event.release.body && ... }}
+      - pattern-not: ${{ ... github.event.deployment.ref && ... }}
+  severity: ERROR
+- id: secrets-inherit
+  languages:
+  - yaml
+  severity: ERROR
+  message: 'This workflow uses `secrets: inherit` to pass all of the calling workflow''s
+    secrets to a reusable workflow. This violates the principle of least privilege
+    because the called workflow receives access to every secret in the repository,
+    not just the ones it needs. If the called workflow is compromised or sourced from
+    a third party, an attacker gains access to all repository secrets. Instead, explicitly
+    pass only the secrets that the called workflow requires using the `secrets:` map,
+    e.g. `secrets: { MY_SECRET: ${{ secrets.MY_SECRET }} }`.'
+  metadata:
+    category: security
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    references:
+    - https://docs.github.com/en/actions/sharing-automations/reusing-workflows#passing-inputs-and-secrets-to-a-reusable-workflow
+    - https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions
+    technology:
+    - github-actions
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+  patterns:
+  - pattern-inside: "jobs:\n  ...\n"
+  - pattern: 'secrets: inherit'
+- id: workflow-run-target-code-checkout
+  languages:
+  - yaml
+  message: This GitHub Actions workflow file uses `workflow_run` and checks out code
+    from the incoming pull request. When using `workflow_run`, the Action runs in
+    the context of the target repository, which includes access to all repository
+    secrets. Normally, this is safe because the Action only runs code from the target
+    repository, not the incoming PR. However, by checking out the incoming PR code,
+    you're now using the incoming code for the rest of the action. You may be inadvertently
+    executing arbitrary code from the incoming PR with access to repository secrets,
+    which would let an attacker steal repository secrets. This normally happens by
+    running build scripts (e.g., `npm build` and `make`) or dependency installation
+    scripts (e.g., `python setup.py install`). Audit your workflow file to make sure
+    no code from the incoming PR is executed. Please see https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+    for additional mitigations.
+  metadata:
+    category: security
+    owasp: A01:2017 - Injection
+    cwe: 'CWE-913: Improper Control of Dynamically-Managed Code Resources'
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+    subcategory:
+    - vuln
+    references:
+    - https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+    - https://github.com/justinsteven/advisories/blob/master/2021_github_actions_checkspelling_token_leak_via_advice_symlink.md
+    - https://www.legitsecurity.com/blog/github-privilege-escalation-vulnerability
+    technology:
+    - github-actions
+  patterns:
+  - pattern-inside: "on:\n  ...\n  workflow_run: ...\n  ...\n...\n"
+  - pattern-inside: "jobs:\n  ...\n  $JOBNAME:\n    ...\n    steps:\n      ...\n"
+  - pattern: "...\nuses: \"$ACTION\"\nwith:\n  ...\n  ref: $EXPR\n"
+  - metavariable-regex:
+      metavariable: $ACTION
+      regex: actions/checkout@.*
+  - metavariable-pattern:
+      language: generic
+      metavariable: $EXPR
+      patterns:
+      - pattern: ${{ github.event.workflow_run ... }}
+  severity: WARNING
+- id: third-party-action-not-pinned-to-commit-sha
+  patterns:
+  - pattern-inside: '{steps: ...}'
+  - pattern: 'uses: "$USES"
+
+      '
+  - metavariable-pattern:
+      metavariable: $USES
+      language: generic
+      patterns:
+      - pattern-not-regex: ^[.]/
+      - pattern-not-regex: ^actions/
+      - pattern-not-regex: ^github/
+      - pattern-not-regex: '@[0-9a-f]{40}$'
+      - pattern-not-regex: ^docker://.*@sha256:[0-9a-f]{64}$
+  paths:
+    include:
+    - .github/workflows
+    - action.yaml
+    - action.yml
+  message: An action sourced from a third-party repository on GitHub is not pinned
+    to a full length commit SHA. Pinning an action to a full length commit SHA is
+    currently the only way to use an action as an immutable release. Pinning to a
+    particular SHA helps mitigate the risk of a bad actor adding a backdoor to the
+    action's repository, as they would need to generate a SHA-1 collision for a valid
+    Git object payload.
+  languages:
+  - yaml
+  severity: WARNING
+  metadata:
+    cwe:
+    - 'CWE-1357: Reliance on Insufficiently Trustworthy Component'
+    - 'CWE-353: Missing Support for Integrity Check'
+    owasp: A06:2021 - Vulnerable and Outdated Components
+    references:
+    - https://owasp.org/Top10/A06_2021-Vulnerable_and_Outdated_Components
+    - https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions
+    category: audit
+    technology:
+    - github-actions
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: LOW
+    confidence: HIGH
+- id: unsafe-add-mask-workflow-command
+  patterns:
+  - pattern-regex: '::add-mask::'
+  languages:
+  - yaml
+  severity: WARNING
+  message: GitHub Actions provides the **'add-mask'** workflow command to mask sensitive
+    data in the workflow logs. If **'add-mask'** is not used or if workflow commands
+    have been stopped, sensitive data can leaked into the workflow logs. An attacker
+    could simply copy the workflow to another branch and add the following payload
+    `echo "::stop-commands::$stopMarker"` to stop workflow command processing ([described
+    here](https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#stopping-and-starting-workflow-commands)),
+    which will cause the secret token to be exposed despite the **'add-mask'** usage.
+    For more information, please refer to the [GitHub documentation](https://github.com/actions/toolkit/blob/main/docs/commands.md#register-a-secret).
+  metadata:
+    cwe:
+    - 'CWE-200: Exposure of Sensitive Information to an Unauthorized Actor'
+    owasp: A06:2017 - Security Misconfiguration
+    category: security
+    technology:
+    - github-actions
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+    vulnerability_class:
+    - Dangerous Method or Function
+    references:
+    - https://github.blog/changelog/2020-10-01-github-actions-deprecating-set-env-and-add-path-commands/
+    - https://github.com/actions/runner/issues/159
+    - https://github.com/actions/runner/issues/475
+    - https://github.com/actions/runner/issues/807
+    - https://0xn3va.gitbook.io/cheat-sheets/ci-cd/github/actions#misuse-of-sensitive-data-in-workflows
+    - https://github.com/github/docs/blob/main/content/actions/using-workflows/workflow-commands-for-github-actions.md#masking-a-value-in-a-log
+- id: semgrep-github-action-push-without-branches
+  message: The 'branches' field (in the push event configuration) contains no branches.
+    This causes all branches to be scanned and may result in unneccessary duplicate
+    findings across the entire codebase.
+  severity: WARNING
+  languages:
+  - yaml
+  paths:
+    include:
+    - /.github/workflows/semgrep.yml
+    - '*.test.yml'
+  patterns:
+  - pattern-either:
+    - pattern: 'on: [..., push, ...]
+
+        ...
+
+        '
+    - pattern: 'on: push
+
+        ...
+
+        '
+    - pattern: "on:\n  ...\n  push: \"\"\n  ...\n...\n"
+    - pattern: "on:\n  ...\n  push: {}\n  ...\n...\n"
+    - patterns:
+      - pattern-inside: "on:\n  ...\n  push: ...\n  ...\n...\n"
+      - pattern-either:
+        - pattern: 'branches: ""
+
+            '
+        - pattern: 'branches: []
+
+            '
+  metadata:
+    category: correctness
+    technology:
+    - github-action
+- id: changes-with-when-never
+  pattern: "- changes:\n  - ...\n  when: never\n"
+  message: 'This Gitlab CI YAML will never run on default branches due to a `changes`
+    rule with `when:never`. To fix this, make sure the triggering event is a push
+    event. You can do this with `if: ''$CI_PIPELINE_SOURCE == "push"''`. See https://docs.gitlab.com/ee/ci/yaml/index.html#ruleschanges'
+  metadata:
+    category: correctness
+    technology:
+    - gitlab
+    - gitlab-ci
+  languages:
+  - yaml
+  severity: WARNING
+- id: no-fractional-cpu-limits
+  patterns:
+  - pattern-inside: "limits:\n  ...\n"
+  - pattern: 'cpu: $CPU_LIMIT
+
+      '
+  - metavariable-regex:
+      metavariable: $CPU_LIMIT
+      regex: \d{0,3}m
+  fix: 'cpu: 1000m'
+  message: When you set a fractional CPU limit on a container, the CPU cycles available
+    will be throttled, even though most nodes can handle processes alternating between
+    using 100% of the CPU.
+  severity: WARNING
+  languages:
+  - yaml
+  metadata:
+    category: best-practice
+    technology:
+    - kubernetes
+- id: exposing-docker-socket-hostpath
+  patterns:
+  - pattern-inside: "volumes:\n  ...\n"
+  - pattern: "hostPath:\n  ...\n  path: /var/run/docker.sock\n"
+  message: Exposing host's Docker socket to containers via a volume. The owner of
+    this socket is root. Giving someone access to it is equivalent to giving unrestricted
+    root access to your host. Remove 'docker.sock' from hostpath to prevent this.
+  metadata:
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    references:
+    - https://kubernetes.io/docs/concepts/storage/volumes/#hostpath
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#volumes-and-file-systems
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-1-do-not-expose-the-docker-daemon-socket-even-to-the-containers
+    category: security
+    technology:
+    - kubernetes
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: HIGH
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: WARNING
+- id: run-as-non-root-container-level-missing-security-context
+  patterns:
+  - pattern-inside: "spec:\n  ...\n  containers:\n    ...\n  ...\n"
+  - pattern-not-inside: "spec:\n  ...\n  securityContext:\n    ...\n    runAsNonRoot:\
+      \ $VAL\n  ...\n"
+  - pattern-inside: "spec:\n  ...\n  containers:\n    ...\n"
+  - pattern-inside: "spec:\n  ...\n  containers:\n    ...\n    - name: $NAME\n   \
+      \   image: ...\n      ...\n      securityContext:\n        ...\n        runAsNonRoot:\
+      \ $VALUE\n"
+  - pattern: "- name: $CONTAINER\n  $IMAGE: $IMAGEVAL\n  ...\n"
+  - pattern-not: "- name: $CONTAINER\n  image: $IMAGEVAL\n  ...\n  securityContext:\n\
+      \    ...\n"
+  - metavariable-regex:
+      metavariable: $IMAGE
+      regex: image
+  - focus-metavariable: $IMAGE
+  fix: "securityContext:\n  runAsNonRoot: true\n$IMAGE\n"
+  message: When running containers in Kubernetes, it's important to ensure that they
+    are properly secured to prevent privilege escalation attacks. One potential vulnerability
+    is when a container is allowed to run applications as the root user, which could
+    allow an attacker to gain access to sensitive resources. To mitigate this risk,
+    it's recommended to add a `securityContext` to the container, with the parameter
+    `runAsNonRoot` set to `true`. This will ensure that the container runs as a non-root
+    user, limiting the damage that could be caused by any potential attacks. By adding
+    a `securityContext` to the container in your Kubernetes pod, you can help to ensure
+    that your containerized applications are more secure and less vulnerable to privilege
+    escalation attacks.
+  metadata:
+    references:
+    - https://kubernetes.io/blog/2016/08/security-best-practices-kubernetes-deployment/
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user
+    category: security
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+  languages:
+  - yaml
+  severity: INFO
+- id: run-as-non-root-container-level
+  patterns:
+  - pattern-inside: "spec:\n  ...\n  containers:\n    ...\n  ...\n"
+  - pattern-not-inside: "spec:\n  ...\n  securityContext:\n    ...\n    runAsNonRoot:\
+      \ $VAL\n  ...\n"
+  - pattern-inside: "spec:\n  ...\n  containers:\n    ...\n"
+  - pattern-inside: "spec:\n  ...\n  containers:\n    ...\n    - name: $NAME\n   \
+      \   image: ...\n      ...\n      securityContext:\n        ...\n        runAsNonRoot:\
+      \ $VALUE\n"
+  - pattern: "- name: $CONTAINER\n  image: ...\n  ...\n  $SC:\n    ...\n"
+  - metavariable-regex:
+      metavariable: $SC
+      regex: ^(securityContext)$
+  - pattern-not: "- name: $CONTAINER\n  image: ...\n  ...\n  securityContext:\n  \
+      \  ...\n    runAsNonRoot: $VALUE\n"
+  - focus-metavariable: $SC
+  fix: "$SC:\n  runAsNonRoot: true #\n"
+  message: When running containers in Kubernetes, it's important to ensure that they
+    are properly secured to prevent privilege escalation attacks. One potential vulnerability
+    is when a container is allowed to run applications as the root user, which could
+    allow an attacker to gain access to sensitive resources. To mitigate this risk,
+    it's recommended to add a `securityContext` to the container, with the parameter
+    `runAsNonRoot` set to `true`. This will ensure that the container runs as a non-root
+    user, limiting the damage that could be caused by any potential attacks. By adding
+    a `securityContext` to the container in your Kubernetes pod, you can help to ensure
+    that your containerized applications are more secure and less vulnerable to privilege
+    escalation attacks.
+  metadata:
+    references:
+    - https://kubernetes.io/blog/2016/08/security-best-practices-kubernetes-deployment/
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user
+    category: security
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+  languages:
+  - yaml
+  severity: INFO
+- id: run-as-non-root-security-context-pod-level
+  patterns:
+  - pattern-inside: "spec:\n  ...\n  $SC:\n    ...\n  ...\n"
+  - metavariable-regex:
+      metavariable: $SC
+      regex: ^(securityContext)$
+  - pattern-not-inside: "spec:\n  ...\n  securityContext:\n    ...\n    runAsNonRoot:\
+      \ $VAL\n  ...\n"
+  - pattern-inside: "$SPEC:\n  ...\n  containers:\n    ...\n"
+  - pattern-not-inside: "$SPEC:\n  ...\n  containers:\n    ...\n    - name: $NAME\n\
+      \      image: ...\n      ...\n      securityContext:\n        ...\n        runAsNonRoot:\
+      \ $VALUE\n"
+  - focus-metavariable: $SC
+  fix: "$SC:\n  runAsNonRoot: true #\n"
+  message: When running containers in Kubernetes, it's important to ensure that they
+    are properly secured to prevent privilege escalation attacks. One potential vulnerability
+    is when a container is allowed to run applications as the root user, which could
+    allow an attacker to gain access to sensitive resources. To mitigate this risk,
+    it's recommended to add a `securityContext` to the container, with the parameter
+    `runAsNonRoot` set to `true`. This will ensure that the container runs as a non-root
+    user, limiting the damage that could be caused by any potential attacks. By adding
+    a `securityContext` to the container in your Kubernetes pod, you can help to ensure
+    that your containerized applications are more secure and less vulnerable to privilege
+    escalation attacks.
+  metadata:
+    references:
+    - https://kubernetes.io/blog/2016/08/security-best-practices-kubernetes-deployment/
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user
+    category: security
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+  languages:
+  - yaml
+  severity: INFO
+- id: run-as-non-root-unsafe-value
+  patterns:
+  - pattern-either:
+    - pattern: "spec:\n  ...\n  securityContext:\n    ...\n    runAsNonRoot: $VALUE\n"
+    - patterns:
+      - pattern-inside: "containers:\n  ...\n"
+      - pattern: "image: ...\n...\nsecurityContext:\n  ...\n  runAsNonRoot: $VALUE\n"
+  - metavariable-pattern:
+      metavariable: $VALUE
+      pattern: 'false
+
+        '
+  - focus-metavariable: $VALUE
+  fix: 'true
+
+    '
+  message: When running containers in Kubernetes, it's important to ensure that they  are
+    properly secured to prevent privilege escalation attacks.  One potential vulnerability
+    is when a container is allowed to run  applications as the root user, which could
+    allow an attacker to gain  access to sensitive resources. To mitigate this risk,
+    it's recommended to  add a `securityContext` to the container, with the parameter
+    `runAsNonRoot`  set to `true`. This will ensure that the container runs as a non-root
+    user,  limiting the damage that could be caused by any potential attacks. By  adding
+    a `securityContext` to the container in your Kubernetes pod, you can  help to
+    ensure that your containerized applications are more secure and  less vulnerable
+    to privilege escalation attacks.
+  metadata:
+    references:
+    - https://kubernetes.io/blog/2016/08/security-best-practices-kubernetes-deployment/
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    category: security
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: INFO
+- id: run-as-non-root
+  patterns:
+  - pattern-inside: "$SPEC:\n  ...\n  containers:\n    ...\n  ...\n"
+  - metavariable-regex:
+      metavariable: $SPEC
+      regex: ^(spec)$
+  - pattern-not-inside: "spec:\n  ...\n  securityContext:\n    ...\n  ...\n"
+  - pattern-inside: "$SPEC:\n  ...\n  containers:\n    ...\n"
+  - pattern-not-inside: "$SPEC:\n  ...\n  containers:\n    ...\n    - name: $NAME\n\
+      \      image: ...\n      ...\n      securityContext:\n        ...\n        runAsNonRoot:\
+      \ $VALUE\n"
+  - focus-metavariable: $SPEC
+  fix: "$SPEC:\n  securityContext:\n    runAsNonRoot: true #\n"
+  message: When running containers in Kubernetes, it's important to ensure that they  are
+    properly secured to prevent privilege escalation attacks.  One potential vulnerability
+    is when a container is allowed to run  applications as the root user, which could
+    allow an attacker to gain  access to sensitive resources. To mitigate this risk,
+    it's recommended to  add a `securityContext` to the container, with the parameter
+    `runAsNonRoot`  set to `true`. This will ensure that the container runs as a non-root
+    user,  limiting the damage that could be caused by any potential attacks. By  adding
+    a `securityContext` to the container in your Kubernetes pod, you can  help to
+    ensure that your containerized applications are more secure and  less vulnerable
+    to privilege escalation attacks.
+  metadata:
+    references:
+    - https://kubernetes.io/blog/2016/08/security-best-practices-kubernetes-deployment/
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-2-set-a-user
+    category: security
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+  languages:
+  - yaml
+  severity: INFO
+- id: seccomp-confinement-disabled
+  patterns:
+  - pattern-inside: "containers:\n  ...\n"
+  - pattern: "image: ...\n...\nsecurityContext:\n  ...\n  seccompProfile: unconfined\n"
+  message: 'Container is explicitly disabling seccomp confinement. This runs the service
+    in an unrestricted state. Remove ''seccompProfile: unconfined'' to prevent this.'
+  metadata:
+    cwe:
+    - 'CWE-284: Improper Access Control'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#seccomp
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    category: security
+    technology:
+    - kubernetes
+    owasp:
+    - A05:2017 - Broken Access Control
+    - A01:2021 - Broken Access Control
+    - A01:2025 - Broken Access Control
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: WARNING
+- id: secrets-in-config-file
+  patterns:
+  - pattern: '$KEY: $VALUE
+
+      '
+  - pattern-inside: 'data: ...
+
+      '
+  - pattern-inside: 'kind: Secret
+
+      ...
+
+      '
+  - metavariable-regex:
+      metavariable: $VALUE
+      regex: (?i)^[aA-zZ0-9+/]+={0,2}$
+  - metavariable-analysis:
+      analyzer: entropy
+      metavariable: $VALUE
+  message: 'Secrets ($VALUE) should not be stored in infrastructure as code files.
+    Use an alternative such as Bitnami Sealed Secrets or KSOPS to encrypt Kubernetes
+    Secrets. '
+  metadata:
+    cwe:
+    - 'CWE-798: Use of Hard-coded Credentials'
+    category: security
+    technology:
+    - kubernetes
+    references:
+    - https://kubernetes.io/docs/concepts/configuration/secret/
+    - https://media.defense.gov/2021/Aug/03/2002820425/-1/-1/0/CTR_Kubernetes_Hardening_Guidance_1.1_20220315.PDF
+    - https://docs.gitlab.com/ee/user/clusters/agent/gitops/secrets_management.html
+    - https://www.cncf.io/blog/2021/04/22/revealing-the-secrets-of-kubernetes-secrets/
+    - https://github.com/bitnami-labs/sealed-secrets
+    - https://www.cncf.io/blog/2022/01/25/secrets-management-essential-when-using-kubernetes/
+    - https://blog.oddbit.com/post/2021-03-09-getting-started-with-ksops/
+    owasp:
+    - A07:2021 - Identification and Authentication Failures
+    - A07:2025 - Authentication Failures
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: WARNING
+- id: skip-tls-verify-cluster
+  pattern: "cluster:\n  ...\n  insecure-skip-tls-verify: true\n"
+  message: 'Cluster is disabling TLS certificate verification when communicating with
+    the server. This makes your HTTPS connections insecure. Remove the ''insecure-skip-tls-verify:
+    true'' key to secure communication.'
+  metadata:
+    cwe:
+    - 'CWE-319: Cleartext Transmission of Sensitive Information'
+    references:
+    - https://kubernetes.io/docs/reference/config-api/client-authentication.v1beta1/#client-authentication-k8s-io-v1beta1-Cluster
+    category: security
+    technology:
+    - kubernetes
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: WARNING
+- id: skip-tls-verify-service
+  pattern: "spec:\n  ...\n  insecureSkipTLSVerify: true\n"
+  message: 'Service is disabling TLS certificate verification when communicating with
+    the server. This makes your HTTPS connections insecure. Remove the ''insecureSkipTLSVerify:
+    true'' key to secure communication.'
+  metadata:
+    cwe:
+    - 'CWE-319: Cleartext Transmission of Sensitive Information'
+    references:
+    - https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.20/#apiservice-v1-apiregistration-k8s-io
+    category: security
+    technology:
+    - kubernetes
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A02:2021 - Cryptographic Failures
+    - A04:2025 - Cryptographic Failures
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: WARNING
+- id: writable-filesystem-container
+  patterns:
+  - pattern-inside: "containers:\n  ...\n"
+  - pattern-inside: "- name: $CONTAINER\n  ...\n"
+  - pattern: 'image: ...
+
+      ...
+
+      '
+  - pattern-not: "image: ...\n...\nsecurityContext:\n  ...\n  readOnlyRootFilesystem:\
+      \ true\n"
+  - focus-metavariable: $CONTAINER
+  message: 'Container $CONTAINER is running with a writable root filesystem. This
+    may allow malicious applications to download and run additional payloads, or modify
+    container files. If an application inside a container has to save something temporarily
+    consider using a tmpfs. Add ''readOnlyRootFilesystem: true'' to this container
+    to prevent this.'
+  metadata:
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#volumes-and-file-systems
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://blog.atomist.com/security-of-docker-kubernetes/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only
+    category: security
+    technology:
+    - kubernetes
+    cwe2021-top25: true
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+  languages:
+  - yaml
+  severity: WARNING
+- id: allow-privilege-escalation-no-securitycontext
+  patterns:
+  - pattern-inside: "containers:\n  ...\n"
+  - pattern-inside: "- $NAME: $CONTAINER\n  ...\n"
+  - pattern: 'image: ...
+
+      ...
+
+      '
+  - pattern-not: "image: ...\n...\nsecurityContext:\n  ...\n"
+  - metavariable-regex:
+      metavariable: $NAME
+      regex: name
+  - focus-metavariable: $NAME
+  fix: "securityContext:\n  allowPrivilegeEscalation: false\n$NAME\n"
+  message: In Kubernetes, each pod runs in its own isolated environment with its own
+    set of security policies. However, certain container images may contain `setuid`
+    or `setgid` binaries that could allow an attacker to perform privilege escalation
+    and gain access to sensitive resources. To mitigate this risk, it's recommended
+    to add a `securityContext` to the container in the pod, with the parameter `allowPrivilegeEscalation`
+    set to `false`. This will prevent the container from running any privileged processes
+    and limit the impact of any potential attacks. By adding a `securityContext` to
+    your Kubernetes pod, you can help to ensure that your containerized applications
+    are more secure and less vulnerable to privilege escalation attacks.
+  metadata:
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#privilege-escalation
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-add-no-new-privileges-flag
+    category: security
+    technology:
+    - kubernetes
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: WARNING
+- id: allow-privilege-escalation-true
+  patterns:
+  - pattern-inside: "containers:\n  ...\n"
+  - pattern-inside: "- name: $CONTAINER\n  ...\n"
+  - pattern-inside: 'image: ...
+
+      ...
+
+      '
+  - pattern-inside: "securityContext:\n  ...\n"
+  - pattern: 'allowPrivilegeEscalation: $TRUE
+
+      '
+  - metavariable-pattern:
+      metavariable: $TRUE
+      pattern: 'true
+
+        '
+  - focus-metavariable: $TRUE
+  fix: 'false
+
+    '
+  message: In Kubernetes, each pod runs in its own isolated environment with its own  set
+    of security policies. However, certain container images may contain  `setuid`
+    or `setgid` binaries that could allow an attacker to perform  privilege escalation
+    and gain access to sensitive resources. To mitigate  this risk, it's recommended
+    to add a `securityContext` to the container in  the pod, with the parameter `allowPrivilegeEscalation`
+    set to `false`.  This will prevent the container from running any privileged processes
+    and  limit the impact of any potential attacks.  In the container `$CONTAINER`
+    this parameter is set to `true` which makes this container much more vulnerable
+    to privelege escalation attacks.
+  metadata:
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#privilege-escalation
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-add-no-new-privileges-flag
+    category: security
+    technology:
+    - kubernetes
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: WARNING
+- id: allow-privilege-escalation
+  patterns:
+  - pattern-inside: "containers:\n  ...\n"
+  - pattern-inside: "- name: $CONTAINER\n  ...\n"
+  - pattern: 'image: ...
+
+      ...
+
+      '
+  - pattern-inside: "image: ...\n...\n$SC:\n  ...\n"
+  - metavariable-regex:
+      metavariable: $SC
+      regex: ^(securityContext)$
+  - pattern-not-inside: "image: ...\n...\nsecurityContext:\n  ...\n  allowPrivilegeEscalation:\
+      \ $VAL\n"
+  - focus-metavariable: $SC
+  fix: "securityContext:\n  allowPrivilegeEscalation: false #\n"
+  message: In Kubernetes, each pod runs in its own isolated environment with its own
+    set of security policies. However, certain container images may contain `setuid`
+    or `setgid` binaries that could allow an attacker to perform privilege escalation
+    and gain access to sensitive resources. To mitigate this risk, it's recommended
+    to add a `securityContext` to the container in the pod, with the parameter `allowPrivilegeEscalation`
+    set to `false`. This will prevent the container from running any privileged processes
+    and limit the impact of any potential attacks. By adding the `allowPrivilegeEscalation`
+    parameter to your the `securityContext`, you can help to ensure that your containerized
+    applications are more secure and less vulnerable to privilege escalation attacks.
+  metadata:
+    cwe:
+    - 'CWE-732: Incorrect Permission Assignment for Critical Resource'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#privilege-escalation
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-add-no-new-privileges-flag
+    category: security
+    technology:
+    - kubernetes
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: WARNING
+- id: hostipc-pod
+  patterns:
+  - pattern-inside: "spec:\n  ...\n"
+  - pattern: 'hostIPC: true
+
+      '
+  message: Pod is sharing the host IPC namespace. This allows container processes
+    to communicate with processes on the host which reduces isolation and bypasses
+    container protection models. Remove the 'hostIPC' key to disable this functionality.
+  metadata:
+    cwe:
+    - 'CWE-693: Protection Mechanism Failure'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#host-namespaces
+    category: security
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+  languages:
+  - yaml
+  severity: WARNING
+- id: hostnetwork-pod
+  patterns:
+  - pattern-inside: "spec:\n  ...\n"
+  - pattern: 'hostNetwork: true
+
+      '
+  message: Pod may use the node network namespace. This gives the pod access to the
+    loopback device, services listening on localhost, and could be used to snoop on
+    network activity of other pods on the same node. Remove the 'hostNetwork' key
+    to disable this functionality.
+  metadata:
+    cwe:
+    - 'CWE-406: Insufficient Control of Network Message Volume (Network Amplification)'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#host-namespaces
+    category: security
+    technology:
+    - kubernetes
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+  languages:
+  - yaml
+  severity: WARNING
+- id: hostpid-pod
+  patterns:
+  - pattern-inside: "spec:\n  ...\n"
+  - pattern: 'hostPID: true
+
+      '
+  message: Pod is sharing the host process ID namespace. When paired with ptrace this
+    can be used to escalate privileges outside of the container. Remove the 'hostPID'
+    key to disable this functionality.
+  metadata:
+    cwe:
+    - 'CWE-269: Improper Privilege Management'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#host-namespaces
+    category: security
+    technology:
+    - kubernetes
+    owasp:
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+  languages:
+  - yaml
+  severity: WARNING
+- apiGroups:
+  - apps
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - ''
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - ''
+  resources:
+  - '*'
+  verbs:
+  - list
+- apiGroups:
+  - ''
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ''
+  resources:
+  - '*'
+  verbs:
+  - '*'
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  - customresourcedefinitions/status
+  verbs:
+  - '*'
+- id: legacy-api-clusterrole-excessive-permissions
+  patterns:
+  - pattern: '"*"
+
+      '
+  - pattern-inside: 'resources: $A
+
+      ...
+
+      '
+  - pattern-inside: 'verbs: $A
+
+      ...
+
+      '
+  - pattern-inside: "- apiGroups: [\"\"]\n  ...\n"
+  - pattern-inside: 'apiVersion: rbac.authorization.k8s.io/v1
+
+      ...
+
+      '
+  - pattern-inside: 'kind: ClusterRole
+
+      ...
+
+      '
+  message: 'Semgrep detected a Kubernetes core API ClusterRole with excessive permissions.
+    Attaching excessive permissions to a ClusterRole associated with the core namespace
+    allows the V1 API to perform arbitrary actions on arbitrary resources attached
+    to the cluster. Prefer explicit allowlists of verbs/resources when configuring
+    the core API namespace. '
+  languages:
+  - yaml
+  severity: WARNING
+  metadata:
+    cwe:
+    - 'CWE-269: Improper Privilege Management'
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://kubernetes.io/docs/reference/access-authn-authz/rbac/#role-and-clusterrole
+    - https://kubernetes.io/docs/concepts/security/rbac-good-practices/#general-good-practice
+    - https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#api-groups
+    category: security
+    technology:
+    - kubernetes
+    cwe2021-top25: false
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+- id: privileged-container
+  pattern-either:
+  - patterns:
+    - pattern-inside: "containers:\n  ...\n"
+    - pattern-inside: "image: ...\n...\nsecurityContext:\n  ...\n"
+    - pattern: 'privileged: true
+
+        '
+  - patterns:
+    - pattern-inside: "spec:\n  ...\n"
+    - pattern-not-inside: 'image: ...
+
+        ...
+
+        '
+    - pattern: 'privileged: true
+
+        '
+  message: Container or pod is running in privileged mode. This grants the container
+    the equivalent of root capabilities on the host machine. This can lead to container
+    escapes, privilege escalation, and other security concerns. Remove the 'privileged'
+    key to disable this capability.
+  metadata:
+    cwe:
+    - 'CWE-250: Execution with Unnecessary Privileges'
+    references:
+    - https://kubernetes.io/docs/concepts/policy/pod-security-policy/#privileged
+    - https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+    - https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html
+    category: security
+    technology:
+    - kubernetes
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: MEDIUM
+    confidence: MEDIUM
+  languages:
+  - yaml
+  severity: WARNING
+- id: flask-debugging-enabled
+  languages:
+  - yaml
+  severity: WARNING
+  message: Do not set FLASK_ENV to "development" since that sets `debug=True` in Flask.
+    Use "dev" or a similar term instead.
+  metadata:
+    owasp: A06:2017 - Security Misconfiguration
+    cwe:
+    - 'CWE-489: Active Debug Code'
+    references:
+    - https://flask.palletsprojects.com/en/2.0.x/debugging/
+    - https://flask.palletsprojects.com/en/2.0.x/config/#ENV
+    category: security
+    technology:
+    - kubernetes
+    - flask
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+    confidence: LOW
+  patterns:
+  - pattern-inside: 'env: [...]
+
+      '
+  - pattern: '{name: FLASK_ENV, value: "development"}
+
+      '
+  fix-regex:
+    regex: development
+    replacement: dev
+- id: api-key-in-query-parameter
+  languages:
+  - yaml
+  message: The $SECURITY_SCHEME security scheme passes an API key in a query parameter.
+    API keys should not be passed as query parameters in security schemes.  Pass the
+    API key in the header or body. If using a query parameter is necessary, ensure
+    that the API key is tightly scoped and short lived.
+  severity: WARNING
+  patterns:
+  - pattern-inside: "openapi: $VERSION\n...\ncomponents:\n  ...\n  securitySchemes:\n\
+      \    ...\n"
+  - metavariable-regex:
+      metavariable: $VERSION
+      regex: 3.*
+  - pattern: "$SECURITY_SCHEME:\n  ...\n  type: apiKey\n  ...\n  in: query\n  \n"
+  metadata:
+    category: security
+    subcategory:
+    - vuln
+    technology:
+    - openapi
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: LOW
+    cwe: 'CWE-598: Use of GET Request Method With Sensitive Query Strings'
+    owasp:
+    - A04:2021 Insecure Design
+    - A07:2021 Identification and Authentication Failures
+    references:
+    - https://datatracker.ietf.org/doc/html/rfc6749
+    - https://cwe.mitre.org/data/definitions/598.html
+    - https://owasp.org/Top10/A04_2021-Insecure_Design/
+    - https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/
+- id: openai-consequential-action-false
+  languages:
+  - yaml
+  message: 'Found ''x-openai-isConsequential: false'' in a state-changing HTTP method:
+    $METHOD $PATH. This Action configuration will enable the ''Always Allow'' option
+    for state-changing HTTP methods, such as POST, PUT, PATCH, or DELETE. The risk
+    of a user selecting the ''Always Allow'' button is that the agent could perform
+    unintended actions on behalf of the user. When working with sensitive functionality,
+    it is always best to include a Human In The Loop (HITL) type of control. Consider
+    the trade-off between security  and user friction and then make a risk-based decision
+    about this function.'
+  severity: WARNING
+  pattern-either:
+  - pattern-inside: "post:\n  ...\n  x-openai-isConsequential: false\n"
+  - pattern-inside: "put:\n  ...\n  x-openai-isConsequential: false\n"
+  - pattern-inside: "patch:\n  ...\n  x-openai-isConsequential: false\n"
+  - pattern-inside: "delete:\n  ...\n  x-openai-isConsequential: false\n"
+  metadata:
+    category: security
+    subcategory:
+    - audit
+    technology:
+    - openapi
+    - openai
+    likelihood: HIGH
+    impact: HIGH
+    confidence: HIGH
+    cwe: 'CWE-441: Unintended Proxy or Intermediary (''Confused Deputy'')'
+    owasp:
+    - A04:2021 Insecure Design
+    - LLM08:2023 - Excessive Agency
+    references:
+    - https://platform.openai.com/docs/actions/consequential-flag
+    - https://owasp.org/Top10/A04_2021-Insecure_Design/
+    - https://owasp.org/www-project-top-10-for-large-language-model-applications/assets/PDF/OWASP-Top-10-for-LLMs-2023-v1_1.pdf
+- id: use-of-basic-authentication
+  languages:
+  - yaml
+  message: Basic authentication is considered weak and should be avoided.  Use a different
+    authentication scheme, such of OAuth2, OpenID Connect, or mTLS.
+  severity: ERROR
+  patterns:
+  - pattern-inside: "openapi: $VERSION\n...\ncomponents:\n  ...\n  securitySchemes:\n\
+      \    ...\n    $SCHEME:\n      ...\n"
+  - metavariable-regex:
+      metavariable: $VERSION
+      regex: 3.*
+  - pattern: 'type: http
+
+      ...
+
+      scheme: basic
+
+      '
+  metadata:
+    category: security
+    subcategory:
+    - vuln
+    technology:
+    - openapi
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+    cwe: 'CWE-287: Improper Authentication'
+    owasp:
+    - A04:2021 Insecure Design
+    - A07:2021 Identification and Authentication Failures
+    references:
+    - https://cwe.mitre.org/data/definitions/287.html
+    - https://owasp.org/Top10/A04_2021-Insecure_Design/
+    - https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/
+- id: bad-1
+  pattern: '...'
+  message: 'a
+
+    b
+
+    '
+  severity: WARNING
+- id: bad-2
+  pattern: '...'
+  message: 'a
+
+    b'
+  severity: WARNING
+- id: good-1
+  pattern: '...'
+  message: a b
+  severity: WARNING
+- id: multi-line-message
+  message: 'This rule has a multi-line message field, which may display poorly in
+    a terminal. Consider ensuring it is on one line. For example, use `message: >-`,
+    not `message: |`.'
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://github.com/semgrep/semgrep-rules/issues/1431
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: [..., $RULE, ...]'
+  - pattern: 'message: "=~/[\\n\\r]/"
+
+      '
+- id: half-written-crypto-example
+  message: A lav crypto hun
+  languages:
+  - js
+  severity: WARNING
+  patterns:
+  - pattern-inside: '# ruleid: missing-deconstructed-value
+
+      const {...,createCipheriv,...} = require(''node:crypto'');
+
+      ...
+
+      '
+  - pattern: 'createCipheriv($ALGO, $KEY, $IV);
+
+      '
+  - pattern-either:
+    - pattern-inside: 'const {...,createCipheriv,...} = require(''node:crypto'');
+
+        ...
+
+        '
+    - pattern-inside: 'let {...,createCipheriv,...} = require(''node:crypto'');
+
+        ...
+
+        '
+    - pattern-inside: 'var {...,createCipheriv,...} = require(''node:crypto'');
+
+        ...
+
+        '
+  - pattern-either:
+    - pattern-inside: 'const {...,createCipheriv,...} = require(''node:crypto'');
+
+        ...
+
+        '
+    - pattern-inside: 'let {...,createCipheriv,...} = require(''node:crypto'');
+
+        ...
+
+        '
+- id: missing-deconstructed-value
+  message: Looks like this value is deconstructing a const/var/let you need to use
+    all three `const {...} =` `var {...} =` and `let {...} =` to provide accurate
+    coverage consider adding the missing patterns in a `pattern-inside` for better
+    coverage.
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-either:
+    - patterns:
+      - pattern-inside: 'rules: ...
+
+          '
+      - pattern-not-inside: "- pattern-either:\n    ...\n"
+      - pattern: "- pattern-inside:\n    $VALUE\n"
+      - pattern-either:
+        - pattern-regex: const {.*}.*=
+        - pattern-regex: let {.*}.*=
+        - pattern-regex: var {.*}.*=
+    - patterns:
+      - patterns:
+        - pattern-inside: 'rules: ...
+
+            '
+        - pattern-inside: "- pattern-either:\n    $VALUE\n"
+        - focus-metavariable:
+          - $VALUE
+        - pattern-inside: "- pattern-inside: \n    $A\n"
+        - metavariable-regex:
+            metavariable: $A
+            regex: .*\s.*(var|const|let)\s{.*}\s=
+      - pattern-not:
+          patterns:
+          - pattern-inside: "...\n- pattern-inside: \n    $Z\n...\n- pattern-inside:\
+              \ \n    $B\n...            \n- pattern-inside: \n    $C\n...\n"
+          - metavariable-regex:
+              metavariable: $Z
+              regex: .*\s.*(var|const|let).*{.*}
+          - metavariable-regex:
+              metavariable: $B
+              regex: .*\s.*(var|const|let).*{.*}
+          - metavariable-regex:
+              metavariable: $C
+              regex: .*\s.*(var|const|let).*{.*}
+- id: express-sandbox-code-injection
+  message: Make sure that unverified user data can not reach `sandbox`.
+  severity: ERROR
+  languages:
+  - javascript
+  metadata:
+    owasp: 'A1: Injection'
+    cwe: 'CWE-94: Improper Control of Generation of Code (''Code Injection'')'
+  patterns:
+  - pattern-either:
+    - pattern-inside: "# ruleid: slow-pattern-general-func\nfunction ($REQ, $RES,\
+        \ ...) {\n    ...\n}\n"
+    - pattern-inside: function $FUNC($REQ, $RES, ...) {...}
+    - pattern-inside: $X = function $FUNC($REQ, $RES, ...) {...}
+  - pattern-either:
+    - pattern: '$S = new $SANDBOX(...);
+
+        ...
+
+        $S.run(<... $REQ.$QUERY.$FOO ...>,...);
+
+        '
+- id: slow-pattern-general-func
+  message: Using patterns like `function (...) {...}` is too general it will probably
+    slow down the rule performance.
+  severity: WARNING
+  metadata:
+    category: performance
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-either:
+    - pattern-inside: 'pattern-inside: $X
+
+        '
+    - pattern-inside: 'pattern-not-inside: $X
+
+        '
+    - pattern-inside: 'pattern: $X
+
+        '
+    - pattern-inside: 'pattern-not: $X
+
+        '
+  - pattern-regex: function[^{]*{[\s\n]*\.\.\.[\s\n]*}
+  - pattern-either:
+    - pattern-inside: 'languages: [...,"javascript",...]
+
+        ...
+
+        '
+    - pattern-inside: 'languages: [...,"typescript",...]
+
+        ...
+
+        '
+- id: express-sandbox-code-injection
+  message: Make sure that unverified user data can not reach `sandbox`.
+  severity: ERROR
+  languages:
+  - javascript
+  metadata:
+    owasp: 'A1: Injection'
+    cwe: 'CWE-94: Improper Control of Generation of Code (''Code Injection'')'
+  patterns:
+  - pattern-inside: '...
+
+      $SANDBOX = require(''sandbox'');
+
+      ...
+
+      '
+  - pattern-either:
+    - pattern-inside: function ($REQ, $RES, ...) {...}
+    - pattern-inside: function $FUNC($REQ, $RES, ...) {...}
+    - pattern-inside: $X = function $FUNC($REQ, $RES, ...) {...}
+    - pattern-inside: var $X = function $FUNC($REQ, $RES, ...) {...};
+    - pattern-inside: $APP.$METHOD(..., function $FUNC($REQ, $RES, ...) {...})
+  - pattern-either:
+    - pattern: $S.run(<... $REQ.$QUERY.$FOO ...>,...);
+- id: slow-pattern-general-property
+  message: Using patterns like `$X.$Y` may be too general and may slow down the rule
+    performance.
+  severity: WARNING
+  metadata:
+    category: performance
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-either:
+    - pattern-inside: 'pattern-inside: $X
+
+        '
+    - pattern-inside: 'pattern-not-inside: $X
+
+        '
+    - pattern-inside: 'pattern: $X
+
+        '
+    - pattern-inside: 'pattern-not: $X
+
+        '
+  - pattern-regex: \$[A-Z]*\.\$[A-Z]*
+- id: typescript.react.best-practice.react-props-in-state.react-props-in-state
+  pattern-either:
+  - patterns:
+    - pattern-inside: "class $CN extends React.Component {\n  ...\n}\n"
+    - pattern-either:
+      - pattern: 'state = {$NAME: <... this.props.$PROP ...>}
+
+          '
+      - pattern: 'this.state = {$NAME: <... this.props.$PROP ...>}
+
+          '
+  - patterns:
+    - pattern-inside: "function $FN({$PROP},...) {\n  ...\n}\n"
+    - pattern-inside: useState(...)
+    - pattern: $PROP
+  - patterns:
+    - pattern-inside: "function $FN($PROP,...) {\n  ...\n}\n"
+    - pattern-inside: useState(...)
+    - pattern-not: $PROP
+  message: It is a bad practice to stop the data flow in rendering by copying props
+    into state.
+  metadata:
+    references:
+    - https://overreacted.io/writing-resilient-components/#principle-1-dont-stop-the-data-flow
+  languages:
+  - typescript
+  - javascript
+  severity: WARNING
+- id: slow-pattern-single-metavariable
+  message: Using a single metavariable as a pattern drastically slows down the rule
+    performance because it will match every expression in a file. Instead, try to
+    match something specific such as a function name, or anchor on a statement that
+    may occur above or below the pattern. The more specific you can be, the faster
+    the pattern will run.
+  severity: WARNING
+  metadata:
+    category: performance
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-either:
+    - pattern-inside: 'pattern-inside: $PATTERN
+
+        '
+    - pattern-inside: 'pattern-not-inside: $PATTERN
+
+        '
+    - pattern-inside: 'pattern: $PATTERN
+
+        '
+    - pattern-inside: 'pattern-not: $PATTERN
+
+        '
+  - metavariable-regex:
+      metavariable: $PATTERN
+      regex: ^\$[A-Z_]*$
+- id: javascript.phantom.security.audit.phantom-injection.phantom-injection
+  message: If unverified user data can reach the `phantom` page methods it can result
+    in Server-Side Request Forgery vulnerabilities
+  severity: WARNING
+  languages:
+  - javascript
+  patterns:
+  - pattern: '...
+
+      $PHANTOM = require(''phantom'');
+
+      ...
+
+      '
+  - pattern-not-inside: 'var $INPUT = "...";
+
+      ...
+
+      '
+- id: javascript.playwright.security.audit.playwright-evaluate-arg-injection.playwright-evaluate-arg-injection
+  message: If unverified user data can reach the `evaluate` method it can result in
+    Server-Side Request Forgery vulnerabilities
+  severity: WARNING
+  languages:
+  - javascript
+  patterns:
+  - pattern-inside: '...
+
+      require(''playwright'');
+
+      ...
+
+      '
+  - pattern-either:
+    - pattern-inside: function $FUNC (...,$INPUT,...) {...}
+    - pattern-inside: function (...,$INPUT,...) {...}
+- id: slow-pattern-top-ellipsis
+  message: Using the ellipsis operator `...` at the top of the pattern drastically
+    slows down the rule performance.
+  severity: WARNING
+  metadata:
+    category: performance
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-either:
+    - pattern-inside: 'pattern-inside: $X
+
+        '
+    - pattern-inside: 'pattern-not-inside: $X
+
+        '
+    - pattern-inside: 'pattern: $X
+
+        '
+    - pattern-inside: 'pattern-not: $X
+
+        '
+  - pattern-regex: \|\s*\n\s*\.\.\.\s*\n[^\n]*\n\s*\.\.\.
+- id: unchecked-subprocess-call1
+  patterns:
+  - pattern-either:
+    - pattern: subprocess.call1(...)
+    - pattern: subprocess.call2(...)
+  message: test
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call2
+  patterns:
+  - pattern-either:
+    - pattern: subprocess.call1(...)
+    - pattern: subprocess.call2(...)
+  - pattern: subprocess.call3(...)
+  message: test
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call3
+  pattern-either:
+  - patterns:
+    - pattern: subprocess.call1(...)
+    - pattern: subprocess.call2(...)
+  message: test
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call4
+  pattern-either:
+  - patterns:
+    - pattern: subprocess.call1(...)
+    - pattern: subprocess.call2(...)
+  - pattern: subprocess.call3(...)
+  message: test
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call5
+  pattern-either:
+  - pattern: subprocess.call1(...)
+  message: test
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call6
+  pattern-either:
+  - pattern: subprocess.call1(...)
+  - pattern: subprocess.call2(...)
+  message: test
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call7
+  patterns:
+  - pattern: subprocess.call1(...)
+  message: test
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call8
+  patterns:
+  - pattern: subprocess.call1(...)
+  - pattern: subprocess.call2(...)
+  message: test
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unnecessary-parent-operator
+  message: Unnecessary parent operator. Remove one to fix.
+  severity: WARNING
+  metadata:
+    category: best-practice
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: [..., $RULE, ...]'
+  - pattern-either:
+    - patterns:
+      - pattern: 'pattern-either:
+
+          - $THING1
+
+          - ...
+
+          '
+      - pattern-not: 'pattern-either:
+
+          - $THING1
+
+          - $THING2
+
+          - ...
+
+          '
+    - patterns:
+      - pattern: 'patterns:
+
+          - $THING1
+
+          - ...
+
+          '
+      - pattern-not: 'patterns:
+
+          - $THING1
+
+          - $THING2
+
+          - ...
+
+          '
+    - pattern: "pattern-either:\n- ...\n- pattern-either:\n  - ...\n"
+- id: unchecked-subprocess-call
+  patterns:
+  - pattern: 'subprocess.call(...)
+
+      '
+  - pattern-not: 'subprocess.call(...)
+
+      '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: blah
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unsatisfiable-rule
+  message: You can not use 'pattern' $A and 'pattern-not' $A together; this will always
+    be empty.
+  severity: ERROR
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'patterns: [...]'
+  - pattern-either:
+    - patterns:
+      - pattern-inside: '- pattern: $A
+
+          ...
+
+          '
+      - pattern: '- pattern-not: $A
+
+          '
+    - patterns:
+      - pattern-inside: '- pattern-not: $A
+
+          ...
+
+          '
+      - pattern: '- pattern: $A
+
+          '
+- id: unchecked-subprocess-call-1
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: ''
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: ''
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call-2
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: ''
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: ''
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: unchecked-subprocess-call-3
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: ''
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: duplicate-id
+  message: The 'id' field $X was used multiple times. The 'id' field needs to be unique.
+  severity: ERROR
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: [..., $RULE, ...]'
+  - pattern-inside: "...\n- id: $X\n  ...\n...\n- id: $X\n  ...\n...\n"
+  - pattern: 'id: $X
+
+      '
+- id: unchecked-subprocess-call
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: This is not checking the return value of this subprocess call; if it fails
+    no exception will be raised. Consider subprocess.check_call() instead
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: duplicate-pattern
+  message: Two identical pattern clauses were detected. This will cause Semgrep to
+    run the same pattern twice. Remove one of the duplicate pattern clauses.
+  severity: ERROR
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: [..., $RULE, ...]'
+  - pattern-inside: '- pattern: $X
+
+      ...
+
+      - pattern: $X
+
+      ...
+
+      '
+  - pattern: 'pattern: $X
+
+      '
+- id: unchecked-subprocess-call
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: ''
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: empty-message
+  message: This rule has an empty message field. Consider adding a message field that
+    communicates why this rule is an issue and how to fix it. This will increase the
+    chance that the finding gets addressed.
+  severity: WARNING
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: [..., $RULE, ...]'
+  - pattern: 'message: ""
+
+      '
+- id: libxml2-xxe-taint
+  message: 'The application is using an XML parser that has not been safely configured.
+    This might lead to XML External Entity (XXE) vulnerabilities when parsing user-controlled
+    input. An attacker can include document type definitions (DTDs) which can interact
+    with internal or external hosts. XXE can lead to other vulnerabilities, such as
+    Local File Inclusion (LFI), Remote Code Execution (RCE), and Server-side request
+    forgery (SSRF), depending on the application configuration. An attacker can also
+    use DTDs to expand recursively, leading to a Denial-of-Service (DoS) attack, also
+    known as a `Billion Laughs Attack`. The best defense against XXE is to have an
+    XML parser that supports disabling DTDs. Limiting the use of external entities
+    from the start can prevent the parser from being used to process untrusted XML
+    files. Reducing dependencies on external resources is also a good practice for
+    performance reasons. It is difficult to guarantee that even a trusted XML file
+    on your server or during transmission has not been tampered with by a malicious
+    third-party. '
+  severity: ERROR
+  options:
+    interfile: true
+  metadata:
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+    interfile: true
+    category: security
+    subcategory:
+    - vuln
+    cwe:
+    - 'CWE-611: Improper Restriction of XML External Entity Reference'
+    cwe2020-top25: true
+    cwe2021-top25: true
+    cwe2022-top25: true
+    owasp:
+    - A04:2017 - XML External Entities (XXE)
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://owasp.org/Top10/A05_2021-Security_Misconfiguration
+    technology:
+    - go
+    - libxml2
+    - go
+    - go-net/http
+    - gin
+    - gin-gonic/gin
+  languages:
+  - go
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern-either:
+      - pattern: '($REQ : http.Request).$FIELD
+
+          '
+      - pattern: '($REQ : *http.Request).$FIELD
+
+          '
+    - metavariable-regex:
+        metavariable: $FIELD
+        regex: ^(BasicAuth|Body|Cookie|Cookies|Form|FormValue|GetBody|Host|Header|MultipartReader|ParseForm|ParseMultipartForm|PostForm|PostFormValue|Referer|RequestURI|Trailer|TransferEncoding|URL|UserAgent)$
+  - patterns:
+    - pattern-inside: 'import "github.com/gin-gonic/gin"
+
+        ...
+
+        '
+    - pattern-either:
+      - patterns:
+        - pattern-either:
+          - pattern: '($CONTEXT : gin.Context).$FIELD
+
+              '
+          - pattern: '($CONTEXT : *gin.Context).$FIELD
+
+              '
+        - metavariable-regex:
+            metavariable: $FIELD
+            regex: ^(Cookie|DefaultPostForm|DefaultQuery|FormFile|GetHeader|GetPostForm|GetPostFormArray|GetPostFormMap|GetQuery|GetQueryArray|GetQueryMap|GetRawData|MultipartForm|Param|Params|PostForm|PostFormArray|PostFormMap|Query|QueryArray|QueryMap)$
+      - pattern-either:
+        - pattern: '($CONTEXT : gin.Context).Request.URL.Query().Get(...)
+
+            '
+        - pattern: '($CONTEXT : *gin.Context).Request.URL.Query().Get(...)
+
+            '
+  pattern-sinks:
+  - patterns:
+    - patterns:
+      - pattern-inside: 'import "$IMPORT"
+
+          ...
+
+          '
+      - metavariable-regex:
+          metavariable: $IMPORT
+          regex: (.*lestrrat-go/libxml2.*)
+    - patterns:
+      - pattern-either:
+        - patterns:
+          - pattern-inside: '$P = parser.New($OPTS)
+
+              ...
+
+              '
+          - pattern: '$P.$PARSE($INPUT)
+
+              '
+        - pattern: 'parser.New($OPTS).$PARSE($INPUT)
+
+            '
+        - pattern: 'NewCtxt($INPUT, $OPTS)
+
+            '
+      - focus-metavariable: $INPUT
+      - metavariable-regex:
+          metavariable: $PARSE
+          regex: ^(Parse|ParseHTML|ParseHTMLReader|ParseHTMLString|ParseReader|ParseString)$
+      - metavariable-pattern:
+          metavariable: $OPTS
+          patterns:
+          - pattern-either:
+            - pattern: 'XMLParseNoEnt
+
+                '
+            - pattern: 'parser.XMLParseNoEnt
+
+                '
+- id: libxml2-xxe-taint
+  message: 'The application is using an XML parser that has not been safely configured.
+    This might lead to XML External Entity (XXE) vulnerabilities when parsing user-controlled
+    input. An attacker can include document type definitions (DTDs) which can interact
+    with internal or external hosts. XXE can lead to other vulnerabilities, such as
+    Local File Inclusion (LFI), Remote Code Execution (RCE), and Server-side request
+    forgery (SSRF), depending on the application configuration. An attacker can also
+    use DTDs to expand recursively, leading to a Denial-of-Service (DoS) attack, also
+    known as a `Billion Laughs Attack`. The best defense against XXE is to have an
+    XML parser that supports disabling DTDs. Limiting the use of external entities
+    from the start can prevent the parser from being used to process untrusted XML
+    files. Reducing dependencies on external resources is also a good practice for
+    performance reasons. It is difficult to guarantee that even a trusted XML file
+    on your server or during transmission has not been tampered with by a malicious
+    third-party. '
+  severity: ERROR
+  metadata:
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+    interfile: true
+    category: security
+    subcategory:
+    - vuln
+    cwe:
+    - 'CWE-611: Improper Restriction of XML External Entity Reference'
+    cwe2020-top25: true
+    cwe2021-top25: true
+    cwe2022-top25: true
+    owasp:
+    - A04:2017 - XML External Entities (XXE)
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://owasp.org/Top10/A05_2021-Security_Misconfiguration
+    technology:
+    - go
+    - libxml2
+    - go
+    - go-net/http
+    - gin
+    - gin-gonic/gin
+  languages:
+  - go
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern-either:
+      - pattern: '($REQ : http.Request).$FIELD
+
+          '
+      - pattern: '($REQ : *http.Request).$FIELD
+
+          '
+    - metavariable-regex:
+        metavariable: $FIELD
+        regex: ^(BasicAuth|Body|Cookie|Cookies|Form|FormValue|GetBody|Host|Header|MultipartReader|ParseForm|ParseMultipartForm|PostForm|PostFormValue|Referer|RequestURI|Trailer|TransferEncoding|URL|UserAgent)$
+  - patterns:
+    - pattern-inside: 'import "github.com/gin-gonic/gin"
+
+        ...
+
+        '
+    - pattern-either:
+      - patterns:
+        - pattern-either:
+          - pattern: '($CONTEXT : gin.Context).$FIELD
+
+              '
+          - pattern: '($CONTEXT : *gin.Context).$FIELD
+
+              '
+        - metavariable-regex:
+            metavariable: $FIELD
+            regex: ^(Cookie|DefaultPostForm|DefaultQuery|FormFile|GetHeader|GetPostForm|GetPostFormArray|GetPostFormMap|GetQuery|GetQueryArray|GetQueryMap|GetRawData|MultipartForm|Param|Params|PostForm|PostFormArray|PostFormMap|Query|QueryArray|QueryMap)$
+      - pattern-either:
+        - pattern: '($CONTEXT : gin.Context).Request.URL.Query().Get(...)
+
+            '
+        - pattern: '($CONTEXT : *gin.Context).Request.URL.Query().Get(...)
+
+            '
+  pattern-sinks:
+  - patterns:
+    - patterns:
+      - pattern-inside: 'import "$IMPORT"
+
+          ...
+
+          '
+      - metavariable-regex:
+          metavariable: $IMPORT
+          regex: (.*lestrrat-go/libxml2.*)
+    - patterns:
+      - pattern-either:
+        - patterns:
+          - pattern-inside: '$P = parser.New($OPTS)
+
+              ...
+
+              '
+          - pattern: '$P.$PARSE($INPUT)
+
+              '
+        - pattern: 'parser.New($OPTS).$PARSE($INPUT)
+
+            '
+        - pattern: 'NewCtxt($INPUT, $OPTS)
+
+            '
+      - focus-metavariable: $INPUT
+      - metavariable-regex:
+          metavariable: $PARSE
+          regex: ^(Parse|ParseHTML|ParseHTMLReader|ParseHTMLString|ParseReader|ParseString)$
+      - metavariable-pattern:
+          metavariable: $OPTS
+          patterns:
+          - pattern-either:
+            - pattern: 'XMLParseNoEnt
+
+                '
+            - pattern: 'parser.XMLParseNoEnt
+
+                '
+- id: interfile-true-under-metadata-and-no-options
+  message: '`interfile: true` should be under the `options` field, not the `metadata`
+    field.'
+  languages:
+  - yaml
+  severity: WARNING
+  patterns:
+  - pattern: "rules:\n  - id: $ID\n    ...\n    $METADATA:\n      ...\n      $INTERFILE:\
+      \ true\n      ...\n    ...\n"
+  - pattern-not-inside: "rules:\n  - id: $ID\n    ...\n    options:\n      ...\n \
+      \   ...\n"
+  - metavariable-regex:
+      metavariable: $INTERFILE
+      regex: interfile
+  - metavariable-regex:
+      metavariable: $METADATA
+      regex: metadata
+  - focus-metavariable: $METADATA
+  fix: "options:\n  interfile: true\nmetadata\n"
+- id: libxml2-xxe-taint
+  message: 'The application is using an XML parser that has not been safely configured.
+    This might lead to XML External Entity (XXE) vulnerabilities when parsing user-controlled
+    input. An attacker can include document type definitions (DTDs) which can interact
+    with internal or external hosts. XXE can lead to other vulnerabilities, such as
+    Local File Inclusion (LFI), Remote Code Execution (RCE), and Server-side request
+    forgery (SSRF), depending on the application configuration. An attacker can also
+    use DTDs to expand recursively, leading to a Denial-of-Service (DoS) attack, also
+    known as a `Billion Laughs Attack`. The best defense against XXE is to have an
+    XML parser that supports disabling DTDs. Limiting the use of external entities
+    from the start can prevent the parser from being used to process untrusted XML
+    files. Reducing dependencies on external resources is also a good practice for
+    performance reasons. It is difficult to guarantee that even a trusted XML file
+    on your server or during transmission has not been tampered with by a malicious
+    third-party. '
+  severity: ERROR
+  options:
+    interfile: true
+    symbolic_propagation: true
+  metadata:
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+    interfile: true
+    category: security
+    subcategory:
+    - vuln
+    cwe:
+    - 'CWE-611: Improper Restriction of XML External Entity Reference'
+    cwe2020-top25: true
+    cwe2021-top25: true
+    cwe2022-top25: true
+    owasp:
+    - A04:2017 - XML External Entities (XXE)
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://owasp.org/Top10/A05_2021-Security_Misconfiguration
+    technology:
+    - go
+    - libxml2
+    - go
+    - go-net/http
+    - gin
+    - gin-gonic/gin
+  languages:
+  - go
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern-either:
+      - pattern: '($REQ : http.Request).$FIELD
+
+          '
+      - pattern: '($REQ : *http.Request).$FIELD
+
+          '
+    - metavariable-regex:
+        metavariable: $FIELD
+        regex: ^(BasicAuth|Body|Cookie|Cookies|Form|FormValue|GetBody|Host|Header|MultipartReader|ParseForm|ParseMultipartForm|PostForm|PostFormValue|Referer|RequestURI|Trailer|TransferEncoding|URL|UserAgent)$
+  - patterns:
+    - pattern-inside: 'import "github.com/gin-gonic/gin"
+
+        ...
+
+        '
+    - pattern-either:
+      - patterns:
+        - pattern-either:
+          - pattern: '($CONTEXT : gin.Context).$FIELD
+
+              '
+          - pattern: '($CONTEXT : *gin.Context).$FIELD
+
+              '
+        - metavariable-regex:
+            metavariable: $FIELD
+            regex: ^(Cookie|DefaultPostForm|DefaultQuery|FormFile|GetHeader|GetPostForm|GetPostFormArray|GetPostFormMap|GetQuery|GetQueryArray|GetQueryMap|GetRawData|MultipartForm|Param|Params|PostForm|PostFormArray|PostFormMap|Query|QueryArray|QueryMap)$
+      - pattern-either:
+        - pattern: '($CONTEXT : gin.Context).Request.URL.Query().Get(...)
+
+            '
+        - pattern: '($CONTEXT : *gin.Context).Request.URL.Query().Get(...)
+
+            '
+  pattern-sinks:
+  - patterns:
+    - patterns:
+      - pattern-inside: 'import "$IMPORT"
+
+          ...
+
+          '
+      - metavariable-regex:
+          metavariable: $IMPORT
+          regex: (.*lestrrat-go/libxml2.*)
+    - patterns:
+      - pattern-either:
+        - patterns:
+          - pattern-inside: '$P = parser.New($OPTS)
+
+              ...
+
+              '
+          - pattern: '$P.$PARSE($INPUT)
+
+              '
+        - pattern: 'parser.New($OPTS).$PARSE($INPUT)
+
+            '
+        - pattern: 'NewCtxt($INPUT, $OPTS)
+
+            '
+      - focus-metavariable: $INPUT
+      - metavariable-regex:
+          metavariable: $PARSE
+          regex: ^(Parse|ParseHTML|ParseHTMLReader|ParseHTMLString|ParseReader|ParseString)$
+      - metavariable-pattern:
+          metavariable: $OPTS
+          patterns:
+          - pattern-either:
+            - pattern: 'XMLParseNoEnt
+
+                '
+            - pattern: 'parser.XMLParseNoEnt
+
+                '
+- id: libxml2-xxe-taint
+  message: 'The application is using an XML parser that has not been safely configured.
+    This might lead to XML External Entity (XXE) vulnerabilities when parsing user-controlled
+    input. An attacker can include document type definitions (DTDs) which can interact
+    with internal or external hosts. XXE can lead to other vulnerabilities, such as
+    Local File Inclusion (LFI), Remote Code Execution (RCE), and Server-side request
+    forgery (SSRF), depending on the application configuration. An attacker can also
+    use DTDs to expand recursively, leading to a Denial-of-Service (DoS) attack, also
+    known as a `Billion Laughs Attack`. The best defense against XXE is to have an
+    XML parser that supports disabling DTDs. Limiting the use of external entities
+    from the start can prevent the parser from being used to process untrusted XML
+    files. Reducing dependencies on external resources is also a good practice for
+    performance reasons. It is difficult to guarantee that even a trusted XML file
+    on your server or during transmission has not been tampered with by a malicious
+    third-party. '
+  severity: ERROR
+  options:
+    symbolic_propagation: true
+  metadata:
+    likelihood: MEDIUM
+    impact: HIGH
+    confidence: HIGH
+    interfile: true
+    category: security
+    subcategory:
+    - vuln
+    cwe:
+    - 'CWE-611: Improper Restriction of XML External Entity Reference'
+    cwe2020-top25: true
+    cwe2021-top25: true
+    cwe2022-top25: true
+    owasp:
+    - A04:2017 - XML External Entities (XXE)
+    - A05:2021 - Security Misconfiguration
+    - A02:2025 - Security Misconfiguration
+    references:
+    - https://owasp.org/Top10/A05_2021-Security_Misconfiguration
+    technology:
+    - go
+    - libxml2
+    - go
+    - go-net/http
+    - gin
+    - gin-gonic/gin
+  languages:
+  - go
+  mode: taint
+  pattern-sources:
+  - patterns:
+    - pattern-either:
+      - pattern: '($REQ : http.Request).$FIELD
+
+          '
+      - pattern: '($REQ : *http.Request).$FIELD
+
+          '
+    - metavariable-regex:
+        metavariable: $FIELD
+        regex: ^(BasicAuth|Body|Cookie|Cookies|Form|FormValue|GetBody|Host|Header|MultipartReader|ParseForm|ParseMultipartForm|PostForm|PostFormValue|Referer|RequestURI|Trailer|TransferEncoding|URL|UserAgent)$
+  - patterns:
+    - pattern-inside: 'import "github.com/gin-gonic/gin"
+
+        ...
+
+        '
+    - pattern-either:
+      - patterns:
+        - pattern-either:
+          - pattern: '($CONTEXT : gin.Context).$FIELD
+
+              '
+          - pattern: '($CONTEXT : *gin.Context).$FIELD
+
+              '
+        - metavariable-regex:
+            metavariable: $FIELD
+            regex: ^(Cookie|DefaultPostForm|DefaultQuery|FormFile|GetHeader|GetPostForm|GetPostFormArray|GetPostFormMap|GetQuery|GetQueryArray|GetQueryMap|GetRawData|MultipartForm|Param|Params|PostForm|PostFormArray|PostFormMap|Query|QueryArray|QueryMap)$
+      - pattern-either:
+        - pattern: '($CONTEXT : gin.Context).Request.URL.Query().Get(...)
+
+            '
+        - pattern: '($CONTEXT : *gin.Context).Request.URL.Query().Get(...)
+
+            '
+  pattern-sinks:
+  - patterns:
+    - patterns:
+      - pattern-inside: 'import "$IMPORT"
+
+          ...
+
+          '
+      - metavariable-regex:
+          metavariable: $IMPORT
+          regex: (.*lestrrat-go/libxml2.*)
+    - patterns:
+      - pattern-either:
+        - patterns:
+          - pattern-inside: '$P = parser.New($OPTS)
+
+              ...
+
+              '
+          - pattern: '$P.$PARSE($INPUT)
+
+              '
+        - pattern: 'parser.New($OPTS).$PARSE($INPUT)
+
+            '
+        - pattern: 'NewCtxt($INPUT, $OPTS)
+
+            '
+      - focus-metavariable: $INPUT
+      - metavariable-regex:
+          metavariable: $PARSE
+          regex: ^(Parse|ParseHTML|ParseHTMLReader|ParseHTMLString|ParseReader|ParseString)$
+      - metavariable-pattern:
+          metavariable: $OPTS
+          patterns:
+          - pattern-either:
+            - pattern: 'XMLParseNoEnt
+
+                '
+            - pattern: 'parser.XMLParseNoEnt
+
+                '
+- id: yaml-key-indentation-check-example
+  message: 'There should be a finding here, because the YAML fuses the hyphen and
+    the key together! '
+  languages:
+  - js
+  severity: WARNING
+  patterns:
+    -pattern: 'bar
+
+      '
+  patterns-again:
+  - pattern: bar
+- id: yaml-key-indentation-check
+  message: 'It looks like you have an YAML indentation issue -- instead of writing
+    `$KEY`,  put a space between the hyphen and what comes after! Otherwise, it reads  as
+    a single string. '
+  languages:
+  - yaml
+  severity: WARNING
+  metadata:
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository
+    category: correctness
+    technology:
+    - semgrep
+  pattern-either:
+  - patterns:
+    - pattern-inside: 'rules: ...
+
+        '
+    - pattern: "$KEY: >-\n  $VALUE\n"
+    - focus-metavariable: $KEY
+    - metavariable-regex:
+        metavariable: $KEY
+        regex: ^-(\w*)$
+- id: half-written-crypto-example
+  message: '# ruleid: message-whitespace-check Semgrep found  a match # ruleid: message-whitespace-check
+    I like    big space'
+  languages:
+  - js
+  severity: WARNING
+  patterns:
+  - pattern: 'createCipheriv($ALGO, $KEY, $IV);
+
+      '
+- id: message-whitespace-check
+  message: It looks like you have an additional space in your rule message, this can
+    look awkward in the finding output, please remove the additional whitespace!
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  fix-regex:
+    regex: (?<=\S)\s(\s{1,})
+    replacement: ' '
+  patterns:
+  - pattern-inside: 'rules: ...
+
+      '
+  - pattern: "message: >-\n  $VALUE\n"
+  - focus-metavariable:
+    - $VALUE
+  - pattern-regex: \w.*
+  - pattern-regex: \s{2,}
+- id: unchecked-subprocess-call
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: bad stuff
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: subprocess-run
+  patterns: subprocess.run(...)
+  message: bad stuff
+  severity: WARNING
+  fix: subprocess.check_call(...)
+  metadata:
+    category: python
+- metadata:
+    category: python
+  id: subprocess-run-2
+  patterns: subprocess.run(...)
+  message: bad stuff
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: metadata-category
+  message: This Semgrep rule is missing a valid 'category' field in the 'metadata'.
+    'category' must be one of 'security', 'correctness', 'best-practice', 'performance',
+    'maintainability', or 'portability'.
+  severity: INFO
+  metadata:
+    category: best-practice
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: [..., $RULE, ...]'
+  - pattern: 'id: $RULEID'
+  - pattern-not-inside: "- ...\n  metadata:\n    ...\n    category: $CATEGORY\n"
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: lOW
+    confidence: lOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    confidence: LOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: metadata-confidence-incorrect-value
+  message: 'Semgrep rule confidence: $VALUE detected, but the value must be LOW, MEDIUM,
+    or HIGH. For more information visit: https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/'
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: "rules: \n  ...\n"
+  - pattern-inside: "metadata: \n  ...\n  category: security\n  ...\n"
+  - pattern: 'confidence: $VALUE
+
+      '
+  - pattern-not: 'confidence: LOW
+
+      '
+  - pattern-not: 'confidence: MEDIUM
+
+      '
+  - pattern-not: 'confidence: HIGH
+
+      '
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: metadata-confidence
+  message: This Semgrep rule is missing a valid 'confidence' field in the 'metadata'.
+    which should be either LOW, MEDIUM, or HIGH. For more information visit https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: "rules: \n  ...\n"
+  - pattern-inside: "metadata: \n  ...\n  category: security\n  ...\n"
+  - pattern-not-inside: "metadata: \n  ...\n  confidence: $VALUE\n"
+- id: example-allowed
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    cwe: 'CWE-257: Storing Passwords in a Recoverable Format'
+    technoloy:
+    - semgrep
+- id: example-prohibited
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    cwe: 'CWE-320: Key Management Errors'
+    technoloy:
+    - semgrep
+- id: metadata-cwe-prohibited-or-discouraged
+  message: Vulnerability mapping for this CWE is discouraged or prohibited.
+  severity: ERROR
+  metadata:
+    category: best-practice
+    technology:
+    - cwe
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: ...'
+  - pattern-inside: 'metadata: ...'
+  - pattern: 'cwe: $CWE'
+  - metavariable-regex:
+      metavariable: $CWE
+      regex: .*CWE-(1|2|3|4|10|16|17|18|19|20|21|60|63|68|70|71|74|75|92|100|101|114|118|119|132|133|136|137|138|139|169|171|189|199|200|216|217|218|225|227|234|247|249|251|254|255|264|265|269|274|275|284|285|287|292|300|310|311|320|330|345|355|361|365|371|372|373|376|380|381|387|388|389|391|398|399|400|411|417|418|423|429|435|438|442|443|445|452|458|461|465|485|490|503|504|505|513|516|517|518|519|533|534|542|545|557|559|569|592|596|604|610|629|630|631|632|633|634|635|657|658|659|660|661|662|664|665|666|668|677|678|679|680|682|690|691|692|693|697|699|700|701|702|703|707|709|710|711|712|713|714|715|716|717|718|719|720|721|722|723|724|725|726|727|728|729|730|731|734|735|736|737|738|739|740|741|742|743|744|745|746|747|748|750|751|752|753|755|769|786|788|800|801|802|803|808|809|810|811|812|813|814|815|816|817|818|819|834|840|844|845|846|847|848|849|850|851|852|853|854|855|856|857|858|859|860|861|864|865|866|867|868|869|870|871|872|873|874|875|876|877|878|879|880|881|882|883|884|885|886|887|888|889|890|891|892|893|894|895|896|897|898|899|900|901|902|903|904|905|906|907|919|928|929|930|931|932|933|934|935|936|937|938|944|945|946|947|948|949|950|951|952|953|954|955|956|957|958|959|960|961|962|963|964|965|966|967|968|969|970|971|972|973|974|975|976|977|978|979|980|981|982|983|984|985|986|987|988|989|990|991|992|993|994|995|996|997|998|999|1000|1001|1002|1003|1005|1006|1008|1009|1010|1011|1012|1013|1014|1015|1016|1017|1018|1019|1020|1026|1027|1028|1029|1030|1031|1032|1033|1034|1035|1036|1040|1041|1042|1043|1044|1047|1048|1051|1053|1054|1055|1056|1057|1059|1060|1062|1063|1064|1065|1066|1068|1069|1070|1072|1073|1074|1076|1078|1080|1081|1082|1083|1084|1085|1086|1090|1092|1094|1095|1097|1099|1101|1103|1105|1106|1107|1109|1110|1111|1112|1113|1114|1115|1117|1118|1119|1121|1122|1124|1125|1128|1129|1130|1131|1132|1133|1134|1135|1136|1137|1138|1139|1140|1141|1142|1143|1144|1145|1146|1147|1148|1149|1150|1151|1152|1153|1154|1155|1156|1157|1158|1159|1160|1161|1162|1163|1165|1166|1167|1168|1169|1170|1171|1172|1175|1178|1179|1180|1181|1182|1183|1184|1185|1186|1187|1194|1195|1196|1197|1198|1199|1200|1201|1202|1203|1205|1206|1207|1208|1210|1211|1212|1213|1214|1215|1216|1217|1218|1219|1225|1226|1227|1228|1237|1238|1305|1306|1307|1308|1309|1324|1337|1340|1343|1344|1345|1346|1347|1348|1349|1350|1352|1353|1354|1355|1356|1358|1359|1360|1361|1362|1363|1364|1365|1366|1367|1368|1369|1370|1371|1372|1373|1374|1375|1376|1377|1378|1379|1380|1381|1382|1383|1387|1388|1396|1397|1398|1399|1400):.*
+- id: example-1
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    cwe: 'CWE-123: Some Vulnerability'
+- id: example-2
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    cwe: 'CWE123: Some Vulnerability'
+- id: example-3
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    cwe: 'cwe-123: Some Vulnerability'
+- id: example-4
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    cwe: CWE-123
+- id: example-4
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    cwe: 'CWE-123: Some Vulnerability
+
+      '
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp:
+    - A03:2021 - Injection
+    - A05:2025 - Injection
+    interfile: true
+    cwe:
+    - 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: HIGH
+    impact: HIGH
+    confidence: HIGH
+    subcategory:
+    - vuln
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp:
+    - A03:2021 - Injection
+    - A05:2025 - Injection
+    deepsemgrep: true
+    cwe:
+    - 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: HIGH
+    impact: HIGH
+    confidence: HIGH
+    subcategory:
+    - vuln
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: metadata-deepsemgrep
+  message: 'We no longer support `deepsemgrep: true`, please use `interfile:true`'
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  fix-regex:
+    regex: deepsemgrep
+    replacement: interfile
+  patterns:
+  - pattern-inside: "rules: \n  ...\n"
+  - pattern-inside: "metadata: \n  ...\n  $DEEPSEMGREP: true\n  ...\n"
+  - focus-metavariable: $DEEPSEMGREP
+  - metavariable-regex:
+      metavariable: $DEEPSEMGREP
+      regex: ^(deepsemgrep)$
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: lOW
+    impact: lOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    impact: LOW
+    likelihood: LOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: metadata-impact-incorrect-value
+  message: 'Semgrep rule impact: $VALUE detected, but the value must be LOW, MEDIUM,
+    or HIGH. For more information visit: https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/'
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: "rules: \n  ...\n"
+  - pattern-inside: "metadata: \n  ...\n  category: security\n  ...\n"
+  - pattern: 'impact: $VALUE
+
+      '
+  - pattern-not: 'impact: LOW
+
+      '
+  - pattern-not: 'impact: MEDIUM
+
+      '
+  - pattern-not: 'impact: HIGH
+
+      '
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: metadata-impact
+  message: This Semgrep rule is missing a valid 'impact' field in the 'metadata'.
+    which should be either LOW, MEDIUM, or HIGH. For more information visit https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/writing-rules/rule-syntax/#TODO
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: "rules: \n  ...\n"
+  - pattern-inside: "metadata: \n  ...\n  category: security\n  ...\n"
+  - pattern-not-inside: "metadata: \n  ...\n  impact: $VALUE\n"
+- id: swift-user-defaults
+  message: Potentially sensitive data was observed to be stored in UserDefaults, which
+    is not adequate protection of sensitive information. For data of a sensitive nature,
+    applications should leverage the Keychain.
+  severity: WARNING
+  metadata:
+    likelihood: LOW
+    impact: HIGH
+    confidence: MEDIUM
+    category: security
+    cwe:
+    - 'CWE-311: Missing Encryption of Sensitive Data'
+    masvs:
+    - 'MASVS-STORAGE-1: The app securely stores sensitive data'
+    owasp:
+    - A03:2017 - Sensitive Data Exposure
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    references:
+    - https://developer.apple.com/library/archive/documentation/Security/Conceptual/SecureCodingGuide/Articles/ValidatingInput.html
+    - https://mas.owasp.org/MASVS/controls/MASVS-STORAGE-1/
+    subcategory:
+    - vuln
+    technology:
+    - ios
+    - macos
+    license: Commons Clause License Condition v1.0[LGPL-2.1-only]
+    vulnerability_class:
+    - Cryptographic Issues
+  languages:
+  - swift
+  options:
+    taint_propagation: true
+    value: 2
+  patterns: null
+- id: metadata-incorrect-option
+  message: It looks like $KEY is not in the default list of expected options, if this
+    is a new key update this rule
+  severity: INFO
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: ...
+
+      '
+  - pattern-inside: "options:\n  $A\n"
+  - focus-metavariable: $A
+  - pattern: '$KEY: $VALUE
+
+      '
+  - metavariable-regex:
+      metavariable: $KEY
+      regex: (?!options|constant_propagation|symbolic_propagation|taint_unify_mvars|taint_assume_safe_functions|taint_assume_safe_indexes|taint_assume_safe_comparisons|taint_assume_safe_booleans|taint_assume_safe_numbers|ac_matching|commutative_boolop|flddef_assign|arrow_is_function|let_is_var|go_deeper_expr|go_deeper_stmt|implicit_deep_exprstmt|implicit_ellipsis|xml_singleton_loose_matching|xml_attrs_implicit_ellipsis|xml_children_ordered|generic_engine|generic_multiline|generic_braces|generic_extra_braces|generic_extra_word_characters|generic_caseless|generic_ellipsis_max_span|generic_comment_style|interfile|generic_engine|commutative_compop|symmetric_eq|taint_only_propagate_through_assignments|taint_match_on|taint_focus_on)
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    license: aasldsladlas
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: metadata-license
+  message: The license should not be set in rule metadata, it gets added by Semgrep
+    app at the registry level.
+  severity: ERROR
+  metadata:
+    category: correctness
+    license: Commons Clause License Condition v1.0[LGPL-2.1-only]
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: ...
+
+      '
+  - pattern-inside: 'metadata: ...
+
+      '
+  - pattern: 'license: ...
+
+      '
+- id: id-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: lOW
+    impact: LOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: ok-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: LOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: metadata-likelihood-incorrect-value
+  message: 'Semgrep rule likelihood: $VALUE detected, but the value must be LOW, MEDIUM,
+    or HIGH. For more information visit: https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/'
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: "rules: \n  ...\n"
+  - pattern-inside: "metadata: \n  ...\n  category: security\n  ...\n"
+  - pattern: 'likelihood: $VALUE
+
+      '
+  - pattern-not: 'likelihood: LOW
+
+      '
+  - pattern-not: 'likelihood: MEDIUM
+
+      '
+  - pattern-not: 'likelihood: HIGH
+
+      '
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: interfile-true-under-metadata-and-options-already-present
+  message: '`interfile: true` should be under the `options` field, not the `metadata`
+    field.'
+  languages:
+  - yaml
+  severity: WARNING
+  patterns:
+  - pattern: "rules:\n  - id: $ID\n    ...\n    $METADATA:\n      ...\n      $INTERFILE:\
+      \ true\n      ...\n    ...\n"
+  - pattern-inside: "rules:\n  - id: $ID\n    ...\n    $OPTIONS:\n      $FIRST_OPT:\
+      \ $VAL\n      ...\n    ...\n"
+  - pattern-not-inside: "rules:\n  - id: $ID\n    ...\n    $OPTIONS:\n      ...\n\
+      \      interfile: true\n      ...\n    ...\n"
+  - metavariable-regex:
+      metavariable: $INTERFILE
+      regex: interfile
+  - metavariable-regex:
+      metavariable: $METADATA
+      regex: metadata
+  - metavariable-regex:
+      metavariable: $OPTIONS
+      regex: options
+  - focus-metavariable: $FIRST_OPT
+  fix: 'interfile: true
+
+    $FIRST_OPT
+
+    '
+- id: metadata-cwe
+  message: '$...CWE The cwe tag in rule metadata should always be in the format "CWE-000:
+    Title".'
+  severity: ERROR
+  metadata:
+    category: best-practice
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: ...'
+  - pattern-inside: 'metadata: ...'
+  - pattern: 'cwe: ...'
+  - pattern-not-regex: CWE-[\d]+:\s+\w
+- id: metadata-likelihood
+  message: This Semgrep rule is missing a valid 'likelihood' field in the 'metadata'.
+    which should be either LOW, MEDIUM, or HIGH. For more information visit https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: "rules: \n  ...\n"
+  - pattern-inside: "metadata: \n  ...\n  category: security\n  ...\n"
+  - pattern-not-inside: "metadata: \n  ...\n  likelihood: $VALUE\n"
+- id: missing-message-field
+  message: This rule does not have a message. Semgrep requires that rules have a message.
+    Include a message to explain what the rule does. Consider writing a message that
+    explains why this is an issue and how to fix it.
+  severity: WARNING
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: [..., $RULE, ...]'
+  - pattern: 'id: $RULEID'
+  - pattern-not-inside: "- ...\n  message: ...\n"
+- id: example-1
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    owasp: 'A1: Some Vulnerability'
+- id: example-2
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    owasp: 'A11: Some Vulnerability'
+- id: example-3
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    owasp: a4
+- id: example-4
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    owasp: A5 Some Vulnerability
+- id: example-5
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    owasp:
+    - A05:2021 - Security Misconfiguration
+    - A06:2017 - Security Misconfiguration
+- id: example-6
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    owasp:
+    - A5:2021 - Security Misconfiguration
+    - A06:201789 - Security Misconfiguration
+- id: metadata-owasp
+  message: The `owasp` tag in Semgrep rule metadata should start with the format "A00:YYYY",
+    where A00 is the OWASP top ten number and YYYY is the OWASP top ten year.
+  severity: ERROR
+  metadata:
+    category: best-practice
+    technology:
+    - semgrep
+  languages:
+  - json
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: ...'
+  - pattern-inside: 'metadata: ...'
+  - pattern-either:
+    - patterns:
+      - pattern: 'owasp: "..."'
+      - pattern-not: 'owasp: "=~/^A(0?[1-9]|10): .+$/"'
+    - patterns:
+      - pattern-inside: 'owasp: [...]'
+      - pattern: '"$ANYTHING"'
+      - pattern-not-regex: .*A[01][0-9]:[0-9]{4}\s+.*
+      - pattern-not-regex: 'owasp:'
+- id: example-1
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    references:
+    - https://google.com
+- id: example-2
+  message: Example
+  severity: ERROR
+  languages:
+  - json
+  - yaml
+  pattern: '...'
+  metadata:
+    references: https://google.com
+- id: metadata-references
+  message: The references in rule metadata should always be a list, even if there's
+    only one.
+  severity: ERROR
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  languages:
+  - json
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: ...
+
+      '
+  - pattern-inside: 'metadata: ...
+
+      '
+  - pattern: 'references: ...
+
+      '
+  - pattern-not: 'references: [...]
+
+      '
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+    subcategory:
+    - audit
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    subcategory:
+    - potato
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: metadata-subcategory-incorrect-value
+  message: 'Semgrep rule likelihood: $VALUE detected, but the value must be vuln,
+    audit, or secure default. For more information visit: https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/'
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: "rules: \n  ...\n"
+  - pattern-inside: "metadata: \n  ...\n  category: security\n  ...\n"
+  - pattern: "subcategory: \n  - $VALUE\n"
+  - pattern-not: "subcategory: \n  - vuln\n"
+  - pattern-not: "subcategory: \n  - audit\n"
+  - pattern-not: "subcategory: \n  - secure default\n"
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    likelihood: LOW
+    impact: LOW
+    confidence: LOW
+    subcategory:
+    - audit
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: require-request
+  message: If an attacker controls the x in require(x) then they can cause code to
+    load that was not intended to run on the server.
+  severity: LOW
+  languages:
+  - javascript
+  - typescript
+  metadata:
+    owasp: A03:2021 - Injection
+    cwe: 'CWE-706: Use of Incorrectly-Resolved Name or Reference'
+    source-rule-url: https://nodesecroadmap.fyi/chapter-1/threat-UIR.html
+    category: security
+    technology:
+    - express
+    references:
+    - https://github.com/google/node-sec-roadmap/blob/master/chapter-2/dynamism.md#dynamism-when-you-need-it
+  patterns: null
+- id: metadata-subcategory
+  message: This Semgrep rule is missing a valid 'subcategory' field in the 'metadata'.
+    which should be either audit, vuln, or secure default. For more information visit
+    https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+  severity: WARNING
+  metadata:
+    category: correctness
+    references:
+    - https://semgrep.dev/docs/contributing/contributing-to-semgrep-rules-repository/
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: "rules: \n  ...\n"
+  - pattern-inside: "metadata: \n  ...\n  category: security\n  ...\n"
+  - pattern-not-inside: "metadata: \n  ...\n  subcategory: $VALUE\n"
+- id: unchecked-subprocess-call
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: bad stuff
+  severity: WARNING
+  fix: subprocess.check_call(...)
+  metadata:
+    category: best-practice
+- id: subprocess-run
+  patterns: subprocess.run(...)
+  message: bad stuff
+  severity: WARNING
+  fix: subprocess.check_call(...)
+  metadata:
+    category: python
+    technology:
+    - semgrep
+- metadata:
+    category: python
+    technology:
+    - semgrep
+  id: subprocess-run-2
+  patterns: subprocess.run(...)
+  message: bad stuff
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: metadata-technology
+  message: This Semgrep rule is missing a 'technology' field in the 'metadata'. Consider
+    adding a list of technologies based on the rule's associated library or framework,
+    or another piece of relevant information.
+  severity: INFO
+  metadata:
+    category: best-practice
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: "rules:\n  ...\n"
+  - pattern-inside: "metadata:\n  ...\n"
+  - pattern-not-inside: "metadata:\n  ...\n  technology: $VALUE\n"
+- id: unchecked-subprocess-call
+  patterns:
+  - pattern-either:
+    - pattern: 'subprocess.call(...)
+
+        '
+    - pattern: 'subprocess.call(...)
+
+        '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  message: ''
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: other-rule
+  languages:
+  - generic
+  message: ''
+  severity: INFO
+  pattern: <div>hello</div>
+- id: missing-language-field
+  message: Please include a 'languages' field for your rule!
+  severity: WARNING
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  languages:
+  - yaml
+  patterns:
+  - pattern-inside: 'rules: [..., $RULE, ...]'
+  - pattern: 'id: $RULEID'
+  - pattern-not-inside: "- ...\n  languages: ...\n"
+- id: unchecked-subprocess-call
+  patterns:
+  - pattern: 'subprocess.call(...)
+
+      '
+  - pattern-not-inside: '$S = subprocess.call(...)
+
+      '
+  - pattern-not-inside: 'subprocess.call(...) == $X
+
+      '
+  severity: WARNING
+  fix: subprocess.check_call(...)
+- id: other-rule
+  pattern: <div>hello</div>
+  languages:
+  - generic
+  severity: INFO
+  message: ''
+- message: ''
+  id: other-rule-2
+  pattern: <div>hello</div>
+  languages:
+  - generic
+  severity: INFO
+- fix: bash
+  id: lang-consistency-bash
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'bash' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(sh)$
+  severity: WARNING
+- fix: cpp
+  id: lang-consistency-cpp
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'cpp' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(c\+\+)$
+  severity: WARNING
+- fix: csharp
+  id: lang-consistency-csharp
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'csharp' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(c\#)$
+  severity: WARNING
+- fix: dockerfile
+  id: lang-consistency-dockerfile
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'dockerfile' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(docker)$
+  severity: WARNING
+- fix: elixir
+  id: lang-consistency-elixir
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'elixir' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(ex)$
+  severity: WARNING
+- fix: go
+  id: lang-consistency-go
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'go' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(golang)$
+  severity: WARNING
+- fix: hcl
+  id: lang-consistency-hcl
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'hcl' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(tf|terraform)$
+  severity: WARNING
+- fix: js
+  id: lang-consistency-js
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'js' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(javascript)$
+  severity: WARNING
+- fix: kotlin
+  id: lang-consistency-kotlin
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'kotlin' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(kt)$
+  severity: WARNING
+- fix: python
+  id: lang-consistency-python
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'python' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(py)$
+  severity: WARNING
+- fix: regex
+  id: lang-consistency-regex
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'regex' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(none)$
+  severity: WARNING
+- fix: solidity
+  id: lang-consistency-solidity
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'solidity' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(sol)$
+  severity: WARNING
+- fix: ts
+  id: lang-consistency-ts
+  languages:
+  - yaml
+  message: Found '$X' in language config which diverges from semgrep.dev normalization.
+    Please use 'ts' instead.
+  metadata:
+    category: correctness
+    technology:
+    - semgrep
+  patterns:
+  - pattern: $X
+  - pattern-inside: 'languages: ...'
+  - metavariable-regex:
+      metavariable: $X
+      regex: ^(typescript)$
+  severity: WARNING

@@ -1,0 +1,457 @@
+rules:
+- id: c-string-equality
+  patterns:
+  - pattern: (char *$X) == (char *$Y)
+  - metavariable-comparison:
+      metavariable: $X
+      comparison: $X != 0
+  - metavariable-comparison:
+      metavariable: $Y
+      comparison: $Y != 0
+  message: Using == on char* performs pointer comparison, use strcmp instead
+  fix: strcmp($X, $Y) == 0
+  languages:
+  - c
+  severity: ERROR
+  metadata:
+    category: correctness
+    technology:
+    - c
+- id: double_goto
+  pattern: "if ($COND)\n  goto $FAIL;\n  goto $FAIL;\n"
+  message: The second goto statement will always be executed.
+  languages:
+  - c
+  severity: WARNING
+  metadata:
+    category: correctness
+    technology:
+    - c
+- id: incorrect-use-ato-fn
+  pattern-either:
+  - pattern: atoi(...)
+  - pattern: atol(...)
+  - pattern: atoll(...)
+  message: Avoid the 'ato*()' family of functions. Their use can lead to undefined
+    behavior, integer overflows, and lack of appropriate error handling. Instead prefer
+    the 'strtol*()' family of functions.
+  metadata:
+    references:
+    - https://stackoverflow.com/q/38393162
+    - https://stackoverflow.com/q/14176123
+    category: correctness
+    technology:
+    - c
+  languages:
+  - c
+  severity: WARNING
+- id: incorrect-use-sscanf-fn
+  patterns:
+  - pattern: sscanf($STR, $FMT, $PTR);
+  - metavariable-regex:
+      metavariable: $FMT
+      regex: '"%(l{0,2}|L)([fegEa]|[dDiouxX])"'
+  message: Avoid 'sscanf()' for number conversions. Its use can lead to undefined
+    behavior, slow processing, and integer overflows. Instead prefer the 'strto*()'
+    family of functions.
+  metadata:
+    references:
+    - https://stackoverflow.com/q/22865622
+    - https://stackoverflow.com/q/7021725
+    - https://www.mattkeeter.com/blog/2021-03-01-happen/
+    category: correctness
+    technology:
+    - c
+  languages:
+  - c
+  severity: WARNING
+- id: double-free
+  patterns:
+  - pattern-not: 'free($VAR);
+
+      ...
+
+      $VAR = NULL;
+
+      ...
+
+      free($VAR);
+
+      '
+  - pattern-not: 'free($VAR);
+
+      ...
+
+      $VAR = malloc(...);
+
+      ...
+
+      free($VAR);
+
+      '
+  - pattern-inside: 'free($VAR);
+
+      ...
+
+      $FREE($VAR);
+
+      '
+  - metavariable-pattern:
+      metavariable: $FREE
+      pattern: free
+  - focus-metavariable: $FREE
+  message: Variable '$VAR' was freed twice. This can lead to undefined behavior.
+  metadata:
+    cwe:
+    - 'CWE-415: Double Free'
+    owasp:
+    - A03:2021 - Injection
+    - A01:2017 - Injection
+    - A05:2025 - Injection
+    references:
+    - https://cwe.mitre.org/data/definitions/415.html
+    - https://owasp.org/www-community/vulnerabilities/Doubly_freeing_memory
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: HIGH
+  languages:
+  - c
+  severity: ERROR
+- id: function-use-after-free
+  patterns:
+  - pattern-either:
+    - pattern: $FUNC(..., <... $VAR ...>, ...)
+    - pattern: $FUNC(..., <... $VAR->$ACCESSOR ...>, ...)
+    - pattern: $FUNC(..., <... (*$VAR).$ACCESSOR ...>, ...)
+    - pattern: $FUNC(..., <... $VAR[$NUM] ...>, ...)
+  - metavariable-regex:
+      metavariable: $FUNC
+      regex: (?!^free$)
+  - pattern-inside: free($VAR); ...
+  - pattern-not-inside: free($VAR); ... $VAR = NULL; ...
+  - pattern-not-inside: free($VAR); ... $VAR = malloc(...); ...
+  message: Variable '$VAR' was passed to a function after being freed. This can lead
+    to undefined behavior.
+  metadata:
+    cwe:
+    - 'CWE-416: Use After Free'
+    references:
+    - https://cwe.mitre.org/data/definitions/416.html
+    - https://ctf-wiki.github.io/ctf-wiki/pwn/linux/glibc-heap/use_after_free/
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: HIGH
+  languages:
+  - c
+  severity: WARNING
+- id: info-leak-on-non-formated-string
+  message: Use %s, %d, %c... to format your variables, otherwise this could leak information.
+  metadata:
+    cwe:
+    - 'CWE-532: Insertion of Sensitive Information into Log File'
+    references:
+    - http://nebelwelt.net/files/13PPREW.pdf
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    owasp:
+    - A09:2021 - Security Logging and Monitoring Failures
+    - A09:2025 - Security Logging & Alerting Failures
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+  languages:
+  - c
+  severity: WARNING
+  pattern: printf(argv[$NUM]);
+- id: insecure-use-gets-fn
+  pattern: gets(...)
+  message: Avoid 'gets()'. This function does not consider buffer boundaries and can
+    lead to buffer overflows. Use 'fgets()' or 'gets_s()' instead.
+  metadata:
+    cwe:
+    - 'CWE-676: Use of Potentially Dangerous Function'
+    references:
+    - https://us-cert.cisa.gov/bsi/articles/knowledge/coding-practices/fgets-and-gets_s
+    category: security
+    technology:
+    - c
+    confidence: MEDIUM
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+  languages:
+  - c
+  severity: ERROR
+- id: insecure-use-memset
+  pattern: memset($...VARS)
+  fix: memset_s($...VARS)
+  message: When handling sensitive information in a buffer, it's important to ensure  that
+    the data is securely erased before the buffer is deleted or reused.  While `memset()`
+    is commonly used for this purpose, it can leave sensitive  information behind
+    due to compiler optimizations or other factors.  To avoid this potential vulnerability,
+    it's recommended to use the  `memset_s()` function instead. `memset_s()` is a
+    standardized function  that securely overwrites the memory with a specified value,
+    making it more  difficult for an attacker to recover any sensitive data that was
+    stored in  the buffer. By using `memset_s()` instead of `memset()`, you can help
+    to  ensure that your application is more secure and less vulnerable to exploits  that
+    rely on residual data in memory.
+  languages:
+  - c
+  severity: WARNING
+  metadata:
+    cwe:
+    - 'CWE-14: Compiler Removal of Code to Clear Buffers'
+    owasp:
+    - A04:2021 - Insecure Design
+    - A06:2025 - Insecure Design
+    references:
+    - https://cwe.mitre.org/data/definitions/14.html
+    - https://owasp.org/Top10/A02_2021-Cryptographic_Failures/
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: MEDIUM
+- id: insecure-use-printf-fn
+  message: Avoid using user-controlled format strings passed into 'sprintf', 'printf'
+    and 'vsprintf'. These functions put you at risk of buffer overflow vulnerabilities
+    through the use of format string exploits. Instead, use 'snprintf' and 'vsnprintf'.
+  metadata:
+    cwe:
+    - 'CWE-134: Use of Externally-Controlled Format String'
+    references:
+    - https://doc.castsoftware.com/display/SBX/Never+use+sprintf%28%29+or+vsprintf%28%29+functions
+    - https://www.cvedetails.com/cwe-details/134/Uncontrolled-Format-String.html
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    subcategory:
+    - vuln
+    likelihood: MEDIUM
+    impact: HIGH
+  languages:
+  - c
+  severity: WARNING
+  patterns:
+  - pattern-either:
+    - pattern: '$FUNC($BUFFER, argv[$NUM], ...);
+
+        ...
+
+        vsprintf(..., $BUFFER, ...);
+
+        '
+    - pattern: vsprintf(..., argv[$NUM], ...)
+    - pattern: '$FUNC($BUFFER, argv[$NUM], ...);
+
+        ...
+
+        sprintf(..., $BUFFER, ...);
+
+        '
+    - pattern: sprintf(...,argv[$NUM],...)
+    - pattern: '$FUNC($BUFFER, argv[$NUM], ...);
+
+        ...
+
+        printf(..., $BUFFER, ...);
+
+        '
+    - pattern: printf(...,argv[$NUM],...)
+  - metavariable-comparison:
+      metavariable: $NUM
+      comparison: int($NUM) > 0
+- id: insecure-use-scanf-fn
+  pattern: scanf(...)
+  message: Avoid using 'scanf()'. This function, when used improperly, does not consider
+    buffer boundaries and can lead to buffer overflows. Use 'fgets()' instead for
+    reading input.
+  metadata:
+    cwe:
+    - 'CWE-676: Use of Potentially Dangerous Function'
+    references:
+    - http://sekrit.de/webdocs/c/beginners-guide-away-from-scanf.html
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+  languages:
+  - c
+  severity: WARNING
+- id: insecure-use-strcat-fn
+  pattern-either:
+  - pattern: strcat(...)
+  - pattern: strncat(...)
+  message: Finding triggers whenever there is a strcat or strncat used. This is an
+    issue because strcat or strncat can lead to buffer overflow vulns. Fix this by
+    using strcat_s instead.
+  metadata:
+    cwe:
+    - 'CWE-676: Use of Potentially Dangerous Function'
+    references:
+    - https://nvd.nist.gov/vuln/detail/CVE-2019-12553
+    - https://techblog.mediaservice.net/2020/04/cve-2020-2851-stack-based-buffer-overflow-in-cde-libdtsvc/
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+  languages:
+  - c
+  severity: WARNING
+- id: insecure-use-string-copy-fn
+  pattern-either:
+  - pattern: strcpy(...)
+  - pattern: strncpy(...)
+  message: Finding triggers whenever there is a strcpy or strncpy used. This is an
+    issue because strcpy does not affirm the size of the destination array and strncpy
+    will not automatically NULL-terminate strings. This can lead to buffer overflows,
+    which can cause program crashes and potentially let an attacker inject code in
+    the program. Fix this by using strcpy_s instead (although note that strcpy_s is
+    an optional part of the C11 standard, and so may not be available).
+  metadata:
+    cwe:
+    - 'CWE-676: Use of Potentially Dangerous Function'
+    references:
+    - https://cwe.mitre.org/data/definitions/676
+    - https://nvd.nist.gov/vuln/detail/CVE-2019-11365
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+  languages:
+  - c
+  severity: WARNING
+- id: insecure-use-strtok-fn
+  pattern: strtok(...)
+  message: Avoid using 'strtok()'. This function directly modifies the first argument
+    buffer, permanently erasing the delimiter character. Use 'strtok_r()' instead.
+  metadata:
+    cwe:
+    - 'CWE-676: Use of Potentially Dangerous Function'
+    references:
+    - https://wiki.sei.cmu.edu/confluence/display/c/STR06-C.+Do+not+assume+that+strtok%28%29+leaves+the+parse+string+unchanged
+    - https://man7.org/linux/man-pages/man3/strtok.3.html#BUGS
+    - https://stackoverflow.com/a/40335556
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+  languages:
+  - c
+  severity: WARNING
+- id: random-fd-exhaustion
+  pattern-either:
+  - patterns:
+    - pattern: '$FD = open("/dev/urandom", ...);
+
+        ...
+
+        read($FD, ...);
+
+        '
+    - pattern-not: '$FD = open("/dev/urandom", ...);
+
+        ...
+
+        $BYTES_READ = read($FD, ...);
+
+        '
+  - patterns:
+    - pattern: '$FD = open("/dev/random", ...);
+
+        ...
+
+        read($FD, ...);
+
+        '
+    - pattern-not: '$FD = open("/dev/random", ...);
+
+        ...
+
+        $BYTES_READ = read($FD, ...);
+
+        '
+  message: Call to 'read()' without error checking is susceptible to file descriptor
+    exhaustion. Consider using the 'getrandom()' function.
+  metadata:
+    cwe:
+    - 'CWE-774: Allocation of File Descriptors or Handles Without Limits or Throttling'
+    references:
+    - https://lwn.net/Articles/606141/
+    category: security
+    technology:
+    - c
+    confidence: MEDIUM
+    subcategory:
+    - audit
+    likelihood: LOW
+    impact: HIGH
+  languages:
+  - c
+  severity: WARNING
+- id: use-after-free
+  patterns:
+  - pattern-either:
+    - pattern: $VAR->$ACCESSOR
+    - pattern: (*$VAR).$ACCESSOR
+    - pattern: $VAR[$NUM]
+  - pattern-inside: free($VAR); ...
+  - pattern-not-inside: $VAR = NULL; ...
+  - pattern-not-inside: free($VAR); ... $VAR = malloc(...); ...
+  message: Variable '$VAR' was used after being freed. This can lead to undefined
+    behavior.
+  metadata:
+    cwe:
+    - 'CWE-416: Use After Free'
+    references:
+    - https://cwe.mitre.org/data/definitions/416.html
+    - https://ctf-wiki.github.io/ctf-wiki/pwn/linux/glibc-heap/use_after_free/
+    category: security
+    technology:
+    - c
+    confidence: LOW
+    cwe2022-top25: true
+    cwe2021-top25: true
+    subcategory:
+    - vuln
+    likelihood: LOW
+    impact: HIGH
+  languages:
+  - c
+  severity: WARNING

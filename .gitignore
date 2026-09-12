@@ -1,0 +1,11 @@
+
+# Commit Guard scan reports and temp artifacts
+commit_guard_reports/
+commit_guard_reports/*
+.commit_guard*
+
+# Commit Guard (local security scanner) — safe to delete anytime
+.commit_guard/
+commit_guard_reports/
+commit-guard
+commit-guard.bat
