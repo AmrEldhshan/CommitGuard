@@ -1,0 +1,1 @@
+"""Bundled CommitGuard rule packs."""

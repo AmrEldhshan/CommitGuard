@@ -1,0 +1,97 @@
+# Infrastructure-as-code pack for Dockerfiles and Terraform.
+# Rules target unambiguous insecure values rather than guessing about absent
+# blocks; absence-based checks belong in a full IaC engine.
+
+rules:
+  - id: cg-docker-user-root
+    description: The container explicitly runs as root.
+    severity: medium
+    languages: [dockerfile]
+    tags: [docker, iac, misconfiguration]
+    cwe: CWE-250
+    regex: '(?i)^\s*USER\s+(?:root|0)(?:\s*:\s*0)?\s*$'
+
+  - id: cg-docker-add-remote
+    description: ADD fetches a remote URL, weakening build reproducibility and supply-chain trust.
+    severity: medium
+    languages: [dockerfile]
+    tags: [docker, iac, supply-chain]
+    cwe: CWE-494
+    regex: '(?i)^\s*ADD\s+(?:https?|git|ftp)://'
+
+  - id: cg-docker-unpinned-from
+    description: Container base image has no tag or digest; builds are not reproducible.
+    severity: low
+    languages: [dockerfile]
+    tags: [docker, iac, supply-chain]
+    cwe: CWE-1104
+    regex: '(?i)^\s*FROM\s+(?:--platform=\S+\s+)?(?!scratch\b)(?![A-Za-z0-9_.-]+\s+AS\b)[^\s:@]+(?:\s*)$'
+
+  - id: cg-docker-latest-tag
+    description: Container base image uses the mutable latest tag.
+    severity: low
+    languages: [dockerfile]
+    tags: [docker, iac, supply-chain]
+    cwe: CWE-1104
+    regex: '(?i)^\s*FROM\s+(?:--platform=\S+\s+)?\S+:latest\b'
+
+  - id: cg-docker-apt-unpinned
+    description: OS packages are installed without a pinned version.
+    severity: low
+    languages: [dockerfile]
+    tags: [docker, iac, supply-chain]
+    cwe: CWE-1104
+    regex: '(?i)\b(?:apt-get|apt|apk|yum|dnf)\s+(?:install|add)\b(?![^\n]*[\w.-]+=\S)'
+
+  - id: cg-terraform-open-cidr
+    description: A security group or firewall is open to the entire internet.
+    severity: high
+    languages: [terraform]
+    paths: ["**/*.tf", "**/*.tfvars"]
+    tags: [terraform, iac, network]
+    cwe: CWE-284
+    regex: '(?i)\b(?:cidr_blocks|ipv6_cidr_blocks)\s*=\s*\[[^\]]*["\x27](?:0\.0\.0\.0/0|::/0)["\x27]'
+
+  - id: cg-terraform-public-s3-acl
+    description: An S3 bucket ACL grants public access.
+    severity: high
+    languages: [terraform]
+    paths: ["**/*.tf"]
+    tags: [terraform, iac, aws, s3]
+    cwe: CWE-284
+    regex: '(?i)\bacl\s*=\s*["\x27](?:public-read|public-read-write|website)["\x27]'
+    fix_pattern: '(?i)(\bacl\s*=\s*["\x27])(?:public-read|public-read-write|website)(["\x27])'
+    fix_replacement: '\1private\2'
+
+  - id: cg-terraform-unencrypted-volume
+    description: Storage encryption is explicitly disabled.
+    severity: high
+    languages: [terraform]
+    paths: ["**/*.tf"]
+    tags: [terraform, iac, encryption]
+    cwe: CWE-311
+    regex: '(?i)\bencrypted\s*=\s*false\b'
+    fix_pattern: '(?i)\bencrypted\s*=\s*false\b'
+    fix_replacement: 'encrypted = true'
+
+  - id: cg-terraform-publicly-accessible
+    description: A database is explicitly exposed to the public internet.
+    severity: high
+    languages: [terraform]
+    paths: ["**/*.tf"]
+    tags: [terraform, iac, database]
+    cwe: CWE-284
+    regex: '(?i)\bpublicly_accessible\s*=\s*true\b'
+    fix_pattern: '(?i)\bpublicly_accessible\s*=\s*true\b'
+    fix_replacement: 'publicly_accessible = false'
+
+  - id: cg-terraform-plaintext-secret
+    description: A secret is stored in plaintext in a Terraform variable file.
+    severity: high
+    languages: [terraform]
+    paths: ["**/*.tfvars"]
+    tags: [terraform, iac, secret]
+    cwe: CWE-798
+    secret: true
+    secret_group: 1
+    regex: '(?i)\b[\w-]*(?:password|secret|token|api[_-]?key|access[_-]?key)\s*=\s*"([^"\s]{8,})"'

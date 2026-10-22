@@ -1,0 +1,110 @@
+# AI/LLM security pack: provider credentials and prompt-injection/data-leakage
+# sinks. Patterns are deliberately line-oriented; context rules correlate a
+# sink with nearby user-controlled input without claiming full taint analysis.
+
+rules:
+  - id: cg-ai-openai-key
+    description: An OpenAI legacy API key was committed.
+    severity: critical
+    tags: [secret, ai, openai]
+    cwe: CWE-798
+    secret: true
+    entropy: 3.2
+    regex: '\bsk-(?!ant-|proj-)[A-Za-z0-9]{32,}\b'
+
+  - id: cg-ai-openai-project-key
+    description: An OpenAI project API key was committed.
+    severity: critical
+    tags: [secret, ai, openai]
+    cwe: CWE-798
+    secret: true
+    entropy: 3.2
+    regex: '\bsk-proj-[A-Za-z0-9_-]{32,}\b'
+
+  - id: cg-ai-anthropic-key
+    description: An Anthropic API key was committed.
+    severity: critical
+    tags: [secret, ai, anthropic]
+    cwe: CWE-798
+    secret: true
+    entropy: 3.2
+    regex: '\bsk-ant-[A-Za-z0-9_-]{32,}\b'
+
+  - id: cg-ai-huggingface-token
+    description: A Hugging Face access token was committed.
+    severity: critical
+    tags: [secret, ai, huggingface]
+    cwe: CWE-798
+    secret: true
+    entropy: 3.0
+    regex: '\bhf_[A-Za-z0-9]{30,}\b'
+
+  - id: cg-ai-cohere-key
+    description: A Cohere API key appears to be hardcoded.
+    severity: critical
+    tags: [secret, ai, cohere]
+    cwe: CWE-798
+    secret: true
+    secret_group: 1
+    entropy: 3.0
+    regex: '(?i)\bcohere[_-]?(?:api[_-]?)?key\b\s*[:=]\s*["\x27]([A-Za-z0-9]{32,})["\x27]'
+
+  - id: cg-ai-pinecone-key
+    description: A Pinecone API key was committed.
+    severity: critical
+    tags: [secret, ai, pinecone]
+    cwe: CWE-798
+    secret: true
+    entropy: 3.0
+    regex: '\bpcsk_[A-Za-z0-9]{32,}\b'
+
+  - id: cg-ai-groq-key
+    description: A Groq API key was committed.
+    severity: critical
+    tags: [secret, ai, groq]
+    cwe: CWE-798
+    secret: true
+    entropy: 3.0
+    regex: '\bgsk_[A-Za-z0-9]{40,}\b'
+
+  - id: cg-ai-prompt-injection-python
+    description: User-controlled input is interpolated directly into an LLM prompt.
+    severity: medium
+    languages: [python]
+    tags: [ai, llm, prompt-injection, context]
+    cwe: CWE-1427
+    regex: '(?i)\.(?:predict|invoke|complete|generate|chat|completion)\w*\s*\(\s*f["\x27][^"\x27\n]*\{[^}\n]*(?:user|input|request|query|message)'
+
+  - id: cg-ai-prompt-injection-concat
+    description: Request data is concatenated directly into an LLM prompt.
+    severity: medium
+    languages: [python]
+    tags: [ai, llm, prompt-injection]
+    cwe: CWE-1427
+    regex: '(?i)\.(?:predict|invoke|complete|generate|chat)\w*\s*\([^\n)]*["\x27][^\n"\x27]*["\x27]\s*\+\s*(?:user|input|request|query|message)'
+
+  - id: cg-ai-prompt-injection-javascript
+    description: Request data reaches an LLM completion call without sanitization.
+    severity: medium
+    languages: [javascript, typescript]
+    tags: [ai, llm, prompt-injection, context]
+    cwe: CWE-1427
+    regex: '(?i)\.(?:createChatCompletion|createCompletion|invoke|generateContent|chat\.completions\.create)\s*\('
+    context:
+      before: 4
+      after: 3
+      regex: '(?i)(?:\$\{[^}]*(?:req\.(?:body|query|params)|userInput|user_input|input|prompt)|["\x27][^\x27"]*["\x27]\s*\+\s*(?:req\.|user|input|prompt))'
+
+  - id: cg-ai-system-prompt-leak
+    description: A long hardcoded system prompt may expose confidential instructions.
+    severity: low
+    tags: [ai, llm, data-leakage]
+    cwe: CWE-200
+    regex: '(?i)\b(?:system_prompt|system_message|hidden_prompt)\s*[:=]\s*["\x27][^"\x27]{60,}'
+
+  - id: cg-ai-training-pii
+    description: Training or fine-tuning data appears to contain an email address.
+    severity: low
+    tags: [ai, pii, data-leakage]
+    cwe: CWE-359
+    regex: '(?i)\b(?:training_data|fine[_-]?tune[_-]?data|dataset)\b[^\n]*\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
