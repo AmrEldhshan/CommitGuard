@@ -1,0 +1,265 @@
+# Commit Guard native rules — high-signal, line-oriented, Python-regex compatible.
+#
+# Every field is documented in docs/RULES.md.  Keep these rules conservative:
+# a false positive in a pre-commit hook erodes trust faster than a missed
+# low-severity finding.  Add project-specific rules here or under rules/custom/.
+#
+# severity: critical | high | medium | low | info
+# secret:   true = mask the captured value (group 1 if present) in reports
+
+rules:
+  # ------------------------------------------------------------------------
+  # Python / Bandit-inspired
+  # ------------------------------------------------------------------------
+  - id: cg-python-exec
+    description: Use of exec() detected (Bandit B102) — can enable arbitrary code execution.
+    severity: medium
+    languages: [python]
+    tags: [bandit, B102, injection]
+    cwe: CWE-78
+    regex: '(?<![\w.])exec\s*\('
+
+  - id: cg-python-eval
+    description: Use of eval() detected (Bandit B307) — avoid evaluating untrusted input.
+    severity: medium
+    languages: [python]
+    tags: [bandit, B307, injection]
+    cwe: CWE-95
+    regex: '(?<![\w.])eval\s*\('
+
+  - id: cg-python-pickle-load
+    description: pickle deserialization can execute arbitrary code when the input is untrusted.
+    severity: medium
+    languages: [python]
+    tags: [bandit, B301, deserialization]
+    cwe: CWE-502
+    regex: '\bpickle\.loads?\s*\('
+
+  - id: cg-python-yaml-unsafe-load
+    description: yaml.load() without a safe Loader can construct arbitrary Python objects.
+    severity: medium
+    languages: [python]
+    tags: [bandit, B506, deserialization]
+    cwe: CWE-502
+    regex: '\byaml\.load\s*\((?!.*\bLoader\s*=\s*yaml\.(?:SafeLoader|CSafeLoader|BaseLoader))'
+    fix_pattern: '\byaml\.load\s*\('
+    fix_replacement: 'yaml.safe_load('
+
+  - id: cg-python-os-system
+    description: os.system() invokes a shell and is vulnerable to command injection (Bandit B605).
+    severity: medium
+    languages: [python]
+    tags: [bandit, B605, command-injection]
+    cwe: CWE-78
+    regex: '\bos\.system\s*\('
+
+  - id: cg-python-subprocess-shell
+    description: subprocess called with shell=True can allow command injection.
+    severity: high
+    languages: [python]
+    tags: [bandit, B602, command-injection]
+    cwe: CWE-78
+    regex: '\bsubprocess\.(?:run|call|Popen|check_call|check_output)\s*\([^\n)]*\bshell\s*=\s*True'
+
+  - id: cg-python-sql-fstring
+    description: SQL query built with an f-string — use parameterized queries instead.
+    severity: high
+    languages: [python]
+    tags: [sqli, injection]
+    cwe: CWE-89
+    regex: '(?i)\.(?:execute|executemany)\s*\(\s*f["\x27]'
+
+  - id: cg-python-sql-percent
+    description: SQL query built with % string formatting — use parameterized queries instead.
+    severity: high
+    languages: [python]
+    tags: [sqli, injection]
+    cwe: CWE-89
+    regex: '(?i)\.(?:execute|executemany)\s*\(\s*["\x27][^"\x27]*["\x27]\s*%'
+
+  - id: cg-python-sql-tainted-execute
+    description: SQL execute() follows a query built with concatenation/formatting — use parameters.
+    severity: high
+    languages: [python]
+    tags: [sqli, injection, context]
+    cwe: CWE-89
+    regex: '(?i)\.(?:execute|executemany)\s*\('
+    context:
+      before: 5
+      after: 0
+      regex: '(?i)(?:query|sql|statement|cmd)\s*=\s*(?:f["\x27]|["\x27][^"\x27]*["\x27]\s*(?:%|\+))'
+
+  - id: cg-python-django-secret-key
+    description: A hardcoded Django SECRET_KEY was committed.
+    severity: high
+    languages: [python]
+    tags: [secret, django]
+    cwe: CWE-798
+    secret: true
+    regex: '(?i)^\s*SECRET_KEY\s*=\s*["\x27][^"\x27]{20,}'
+
+  - id: cg-python-flask-debug
+    description: Flask is running with debug=True, which can expose an interactive debugger.
+    severity: medium
+    languages: [python]
+    tags: [flask, misconfiguration]
+    regex: '(?i)\.run\s*\([^\n)]*\bdebug\s*=\s*True'
+    fix_pattern: '\bdebug\s*=\s*True'
+    fix_replacement: 'debug=False'
+
+  - id: cg-python-tls-verify-disabled
+    description: TLS certificate verification is disabled (verify=False).
+    severity: medium
+    languages: [python]
+    tags: [tls, misconfiguration]
+    cwe: CWE-295
+    regex: '(?i)\bverify\s*=\s*False\b'
+    fix_pattern: '\bverify\s*=\s*False\b'
+    fix_replacement: 'verify=True'
+
+  # ------------------------------------------------------------------------
+  # JavaScript / TypeScript
+  # ------------------------------------------------------------------------
+  - id: cg-javascript-eval
+    description: Use of eval() in JavaScript can lead to code injection.
+    severity: medium
+    languages: [javascript, typescript]
+    tags: [injection]
+    cwe: CWE-95
+    regex: '(?<![\w.$])eval\s*\('
+
+  - id: cg-javascript-innerhtml
+    description: Assigning to innerHTML can introduce DOM-based XSS.
+    severity: medium
+    languages: [javascript, typescript]
+    tags: [xss]
+    cwe: CWE-79
+    regex: '\.innerHTML\s*='
+
+  - id: cg-react-dangerously-set-innerhtml
+    description: dangerouslySetInnerHTML bypasses React's XSS protections.
+    severity: low
+    languages: [javascript, typescript]
+    tags: [xss, react]
+    cwe: CWE-79
+    regex: 'dangerouslySetInnerHTML'
+
+  - id: cg-node-child-process-exec
+    description: child_process.exec() runs a shell command and can allow injection.
+    severity: medium
+    languages: [javascript, typescript]
+    tags: [command-injection]
+    cwe: CWE-78
+    regex: '\bchild_process\.exec\s*\('
+
+  # ------------------------------------------------------------------------
+  # Shell / Docker
+  # ------------------------------------------------------------------------
+  - id: cg-shell-curl-pipe
+    description: Piping a remote download directly into a shell is unsafe.
+    severity: high
+    languages: [bash, dockerfile]
+    tags: [supply-chain]
+    cwe: CWE-494
+    regex: '(?i)\b(?:curl|wget)\b[^\n|]*\|\s*(?:ba|z|k)?sh\b'
+
+  - id: cg-shell-chmod-777
+    description: World-writable permissions (chmod 777) are overly permissive.
+    severity: low
+    languages: [bash]
+    tags: [misconfiguration]
+    cwe: CWE-732
+    regex: '(?i)\bchmod\s+(?:-R\s+)?0?777\b'
+
+  - id: cg-docker-privileged
+    description: A privileged container or --privileged flag weakens isolation. # commit-guard-ignore
+    severity: high
+    languages: [dockerfile, yaml, bash]
+    tags: [docker, misconfiguration]
+    cwe: CWE-250
+    regex: '(?i)(?:--privileged\b|privileged\s*:\s*true)' # commit-guard-ignore
+
+  # ------------------------------------------------------------------------
+  # Secrets (high-confidence patterns not always covered by upstream packs)
+  # ------------------------------------------------------------------------
+  - id: cg-private-key
+    description: A private key block was committed.
+    severity: critical
+    tags: [secret]
+    cwe: CWE-798
+    secret: true
+    regex: '-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'
+
+  - id: cg-aws-access-key
+    description: An AWS access key ID was committed.
+    severity: critical
+    tags: [secret, aws]
+    cwe: CWE-798
+    secret: true
+    regex: '\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'
+
+  - id: cg-github-token
+    description: A GitHub token was committed.
+    severity: critical
+    tags: [secret, github]
+    cwe: CWE-798
+    secret: true
+    regex: '\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}'
+
+  - id: cg-slack-token
+    description: A Slack token was committed.
+    severity: high
+    tags: [secret, slack]
+    cwe: CWE-798
+    secret: true
+    regex: '\bxox[baprs]-[A-Za-z0-9-]{10,}'
+
+  - id: cg-openai-key
+    description: An OpenAI-style API key was committed.
+    severity: high
+    tags: [secret]
+    cwe: CWE-798
+    secret: true
+    entropy: 3.5
+    regex: '\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}'
+
+  - id: cg-jwt-token
+    description: A JSON Web Token was committed.
+    severity: high
+    tags: [secret, jwt]
+    cwe: CWE-798
+    secret: true
+    regex: '\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}'
+
+  - id: cg-hardcoded-password
+    description: A password-like value appears to be hardcoded in source.
+    severity: medium
+    tags: [secret]
+    cwe: CWE-798
+    secret: true
+    regex: '(?i)\b(?:password|passwd|pwd|secret)\s*[:=]\s*["\x27][^"\x27]{6,}["\x27]'
+
+  # ------------------------------------------------------------------------
+  # Web / cloud configuration
+  # ------------------------------------------------------------------------
+  - id: cg-cors-wildcard
+    description: Wildcard CORS origin allows any website to read responses.
+    severity: medium
+    tags: [cors, misconfiguration]
+    cwe: CWE-942
+    regex: '(?i)access-control-allow-origin["\x27]?\s*[:=]\s*["\x27]\*["\x27]'
+
+  - id: cg-k8s-hostpath
+    description: A Kubernetes hostPath volume mounts the node filesystem into a pod.
+    severity: low
+    languages: [yaml]
+    tags: [kubernetes, misconfiguration]
+    cwe: CWE-250
+    regex: '(?i)\bhostPath\s*:'
+
+  - id: cg-debug-true
+    description: DEBUG is enabled in configuration or source.
+    severity: low
+    languages: [python]
+    tags: [misconfiguration]
+    regex: '(?i)\bDEBUG\s*=\s*True\b'

@@ -1,0 +1,36 @@
+# Commit Guard manifest for https://pre-commit.com
+#
+# First install the self-contained engine into the target repository without
+# a native hook:
+#
+#   python install_hook.py install . --no-hook
+#
+# Then add this hook to .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/AmrEldhshan/CommitGuard
+#       rev: v2.1.0
+#       hooks:
+#         - id: commit-guard
+#
+# The entry runs the installed copy in the target repository, so rules and
+# configuration stay self-contained and no network access is used at scan time.
+- id: commit-guard
+  name: Commit Guard secret/SAST scan
+  description: Fully offline scan of staged changes for secrets, SAST issues, and misconfigurations.
+  entry: python .commit_guard/main.py
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+  verbose: true
+
+- id: commit-guard-push
+  name: Commit Guard pushed-commit audit
+  description: Audit commits being pushed using the installed Commit Guard rules.
+  entry: python .commit_guard/main.py --pre-push
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]
+  verbose: true

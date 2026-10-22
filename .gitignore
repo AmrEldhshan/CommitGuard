@@ -1,11 +1,19 @@
-
-# Commit Guard scan reports and temp artifacts
-commit_guard_reports/
-commit_guard_reports/*
-.commit_guard*
-
-# Commit Guard (local security scanner) — safe to delete anytime
+# Commit Guard local install artifacts (never commit these)
 .commit_guard/
 commit_guard_reports/
 commit-guard
 commit-guard.bat
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

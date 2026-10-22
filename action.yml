@@ -1,0 +1,123 @@
+name: CommitGuard Security Scan
+description: Offline-first secret, SAST, dependency, and blast-radius scanning with optional report PRs.
+author: CommitGuard
+
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  threshold:
+    description: Minimum severity that blocks the job (critical, high, medium, low, info).
+    required: false
+    default: high
+  format:
+    description: Report format (markdown, json, sarif, both, junit, gitlab, checkstyle).
+    required: false
+    default: markdown
+  scan-mode:
+    description: Scan mode (all, staged, or diff).
+    required: false
+    default: all
+  diff:
+    description: Revision range used when scan-mode is diff.
+    required: false
+    default: origin/main...HEAD
+  dep-graph:
+    description: Write the dependency and blast-radius graph.
+    required: false
+    default: "true"
+  dep-graph-format:
+    description: Graph format (mermaid, json, dot, or all).
+    required: false
+    default: all
+  create-pr:
+    description: Create or update a report-only pull request.
+    required: false
+    default: "false"
+  pr-base:
+    description: Base branch for the report PR (empty uses GITHUB_BASE_REF or main).
+    required: false
+    default: ""
+  pr-branch:
+    description: Branch that stores the generated report.
+    required: false
+    default: commitguard/security-report
+  pr-title:
+    description: Title for the generated pull request.
+    required: false
+    default: CommitGuard security report
+  review-pr:
+    description: Post inline auto-fix suggestions on the originating pull request.
+    required: false
+    default: "false"
+  soft-fail:
+    description: Report findings without failing the job.
+    required: false
+    default: "false"
+  github-token:
+    description: Token used for report PRs. Defaults to github.token.
+    required: false
+    default: ""
+  extra-args:
+    description: Additional shell-split arguments passed to the scanner.
+    required: false
+    default: ""
+
+outputs:
+  report:
+    description: Markdown report path.
+    value: commit_guard_reports/report.md
+  graph:
+    description: Mermaid graph path.
+    value: commit_guard_reports/dependency-graph.mmd
+
+runs:
+  using: composite
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: python -m pip install --quiet "PyYAML>=6.0"
+
+    - name: Scan repository
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token != '' && inputs.github-token || github.token }} # commit-guard-ignore
+        CG_THRESHOLD: ${{ inputs.threshold }}
+        CG_FORMAT: ${{ inputs.format }}
+        CG_SCAN_MODE: ${{ inputs.scan-mode }}
+        CG_DIFF: ${{ inputs.diff }}
+        CG_DEP_GRAPH: ${{ inputs.dep-graph }}
+        CG_DEP_GRAPH_FORMAT: ${{ inputs.dep-graph-format }}
+        CG_CREATE_PR: ${{ inputs.create-pr }}
+        CG_PR_BASE: ${{ inputs.pr-base }}
+        CG_PR_BRANCH: ${{ inputs.pr-branch }}
+        CG_PR_TITLE: ${{ inputs.pr-title }}
+        CG_REVIEW_PR: ${{ inputs.review-pr }}
+        CG_SOFT_FAIL: ${{ inputs.soft-fail }}
+        CG_EXTRA_ARGS: ${{ inputs.extra-args }}
+      run: |
+        args=(--threshold "$CG_THRESHOLD" --format "$CG_FORMAT")
+        case "$CG_SCAN_MODE" in
+          all) args+=(--all) ;;
+          staged) ;;
+          diff) args+=(--diff "$CG_DIFF") ;;
+          *) echo "::error::scan-mode must be all, staged, or diff"; exit 2 ;;
+        esac
+        if [ "$CG_DEP_GRAPH" = "true" ]; then
+          args+=(--dep-graph --dep-graph-format "$CG_DEP_GRAPH_FORMAT")
+        fi
+        if [ "$CG_CREATE_PR" = "true" ]; then
+          args+=(--create-pr --pr-branch "$CG_PR_BRANCH" --pr-title "$CG_PR_TITLE")
+          if [ -n "$CG_PR_BASE" ]; then args+=(--pr-base "$CG_PR_BASE"); fi
+        fi
+        if [ "$CG_REVIEW_PR" = "true" ]; then
+          args+=(--review-pr)
+          if [ -z "${GITHUB_TOKEN:-}" ]; then echo "::error::github-token is required for review-pr"; exit 2; fi
+        fi
+        if [ "$CG_SOFT_FAIL" = "true" ]; then args+=(--soft-fail); fi
+        if [ -n "$CG_EXTRA_ARGS" ]; then
+          read -r -a extra <<< "$CG_EXTRA_ARGS"
+          args+=("${extra[@]}")
+        fi
+        python "${GITHUB_ACTION_PATH}/main.py" "${args[@]}"

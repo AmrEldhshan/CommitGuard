@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "commit-guard"
+dynamic = ["version"]
+description = "Offline-first secret, SAST, dependency, and blast-radius scanner with zero telemetry."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0"]
+keywords = ["security", "secrets", "sast", "sca", "pre-commit", "github-actions"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.scripts]
+commit-guard = "install_hook:main"
+commit-guard-scan = "main:main"
+
+[project.urls]
+Documentation = "https://github.com/AmrEldhshan/CommitGuard#readme"
+Source = "https://github.com/AmrEldhshan/CommitGuard"
+
+[tool.setuptools]
+py-modules = ["main", "install_hook"]
+packages = ["core", "rules"]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "core.__version__"}
+
+[tool.setuptools.package-data]
+rules = ["*.toml", "*.yaml", "*.yml", "**/*.toml", "**/*.yaml", "**/*.yml"]
