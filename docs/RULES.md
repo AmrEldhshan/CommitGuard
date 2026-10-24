@@ -29,6 +29,37 @@ model sanitizers.
 
 ---
 
+## Downloading and enabling rule packs
+
+The GUI **Rules** tab can fetch packs on demand. Network access is never
+automatic and hooks/CI never download rules.
+
+| Pack type | Installed file | Notes |
+|---|---|---|
+| Gitleaks upstream (TOML) | `rules/gitleaks.toml` | Replaces the bundled gitleaks file; the previous copy is kept as `.bak`. |
+| Semgrep YAML | `rules/semgrep_rules/downloaded-<name>.yaml` | Only top-level `pattern-regex` / regex-only `pattern-either` rules become active. |
+| Native YAML | `rules/custom/downloaded-<name>.yaml` | Uses the native `rules:` schema shown below. |
+
+Safety and validation:
+
+- Only public `http`/`https` URLs are accepted. Credentials, `localhost`,
+  `.local` names, and private/link-local/reserved IPs are rejected (including
+  redirect targets).
+- Responses are capped at 5 MB and downloads time out.
+- The file is written to a temporary path, then checked with the normal rule
+  loader before it becomes active.
+- Semgrep/native packs that add no usable regex rules are rejected and the
+  previous file is restored. Updates also restore the old file if loading
+  fails after replacement.
+- Rule packs are trusted input for the regex engine; only download from
+  sources you trust.
+
+Use `./commit-guard check-rules` after a download to validate the whole
+ruleset and corpus. Downloads do not make AST-only Semgrep rules executable;
+those remain in the skipped count.
+
+---
+
 ## Severity
 
 | Level | Typical meaning | Blocks at default `high` |

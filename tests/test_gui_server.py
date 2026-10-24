@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from unittest import mock
 
 import gui_server
 
@@ -233,6 +234,36 @@ class GuiServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 200, rules)
         self.assertIn("total", rules)
+
+    def test_rule_pack_download_route(self):
+        payload = (
+            b"rules:\n  - id: server-download\n    description: Downloaded\n"
+            b"    severity: high\n    regex: 'server-download-[0-9]+'\n"
+        )
+        with (
+            mock.patch.object(gui_server.actions, "_validate_rule_url", side_effect=lambda value: value),
+            mock.patch.object(
+                gui_server.actions,
+                "_fetch_rule_url",
+                return_value=(payload, "text/yaml", "https://example.com/pack.yaml"),
+            ),
+        ):
+            status, data, _ = self._request(
+                "/api/rules/download",
+                {
+                    "repo": str(self.root),
+                    "options": {
+                        "source": "custom",
+                        "url": "https://example.com/pack.yaml",
+                        "name": "server-pack",
+                    },
+                },
+            )
+        self.assertEqual(status, 200, data)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["rules_added"], 1)
+        self.assertTrue(Path(data["path"]).is_file())
+        self.assertIn("downloaded-server-pack.yaml", data["path"])
 
     def test_version_health(self):
         status, health, _ = self._request("/api/health")

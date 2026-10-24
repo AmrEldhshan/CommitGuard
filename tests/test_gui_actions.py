@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import gui_actions as actions
 
@@ -232,6 +233,81 @@ class GuiActionTests(unittest.TestCase):
             actions.maintenance(self.root, "uninstall", {"confirm": "wrong"})
         with self.assertRaises(actions.ActionError):
             actions.maintenance(self.root, "nope")
+
+
+class RulePackTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        if not GIT:
+            self.skipTest("git is required")
+        git(self.root, "init", "-q")
+        self.engine = self.root / "main.py"
+        self.engine.write_text("", encoding="utf-8")
+        self.rules = self.root / "rules"
+        self.rules.mkdir()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def _download(self, payload, *, source, name=None, url="https://example.com/pack.yaml"):
+        with (
+            mock.patch.object(actions, "_validate_rule_url", side_effect=lambda value: value),
+            mock.patch.object(
+                actions, "_fetch_rule_url", return_value=(payload, "text/plain", url)
+            ),
+        ):
+            return actions.download_rule_pack(
+                self.root,
+                {"source": source, "url": url, "name": name},
+                engine=self.engine,
+            )
+
+    def test_gitleaks_pack_replaces_file_and_keeps_backup(self):
+        target = self.rules / "gitleaks.toml"
+        target.write_text('title = "old"\n', encoding="utf-8")
+        data = (
+            b'title = "downloaded"\n[[rules]]\nid = "pack-secret"\n'
+            b'description = "Pack secret"\nregex = "pack-secret-[0-9]+"\n'
+        )
+        result = self._download(data, source="gitleaks", url="https://example.com/gitleaks.toml")
+        self.assertEqual(result["rules_total"], 1)
+        self.assertEqual(target.read_text(encoding="utf-8"), data.decode("utf-8"))
+        self.assertTrue(Path(result["backup"]).is_file())
+        self.assertEqual(Path(result["backup"]).read_text(encoding="utf-8"), 'title = "old"\n')
+
+    def test_custom_yaml_pack_is_installed_and_enabled(self):
+        data = (
+            b"rules:\n  - id: downloaded-custom\n    description: Downloaded\n"
+            b"    severity: high\n    regex: 'downloaded-[0-9]+'\n"
+        )
+        result = self._download(data, source="custom", name="Team Rules")
+        self.assertEqual(result["rules_added"], 1)
+        self.assertIn("downloaded-team-rules.yaml", result["path"])
+
+    def test_invalid_pack_is_removed_and_existing_rules_survive(self):
+        existing = self.rules / "custom_rules.yaml"
+        existing.write_text(
+            "rules:\n  - id: kept\n    description: Kept\n    severity: high\n"
+            "    regex: 'kept-value'\n",
+            encoding="utf-8",
+        )
+        bad = b"rules:\n  - id: bad\n    description: Bad\n    severity: high\n    regex: '('\n"
+        with self.assertRaises(actions.ActionError):
+            self._download(bad, source="custom", name="bad")
+        self.assertFalse((self.rules / "custom" / "downloaded-bad.yaml").exists())
+        self.assertIn("kept", existing.read_text(encoding="utf-8"))
+
+    def test_rule_url_validation_rejects_local_and_credentialed_urls(self):
+        for url in (
+            "file:///tmp/rules.yaml",
+            "http://127.0.0.1/rules.yaml",
+            "https://user:pass@example.com/rules.yaml",
+            "http://localhost/rules.yaml",
+            "https://example.com:bad/rules.yaml",
+        ):
+            with self.assertRaises(actions.ActionError, msg=url):
+                actions._validate_rule_url(url)
 
 
 class GuiFixTests(unittest.TestCase):

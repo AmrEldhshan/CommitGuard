@@ -226,6 +226,33 @@ def _make_handler(state: AppState, token: str):
                 if path == "/api/reports/download":
                     self._serve_report(query.get("repo") or state.repo or "", query.get("name") or "")
                     return
+                if path == "/api/git/status":
+                    self._send_json(actions.git_status(query.get("repo") or state.repo or ""))
+                    return
+                if path == "/api/git/log":
+                    self._send_json(
+                        actions.git_log(
+                            query.get("repo") or state.repo or "",
+                            limit=query.get("limit") or 20,
+                            all_branches=query.get("all") in ("1", "true", "yes"),
+                        )
+                    )
+                    return
+                if path == "/api/git/branches":
+                    self._send_json(actions.git_branches(query.get("repo") or state.repo or ""))
+                    return
+                if path == "/api/git/remotes":
+                    self._send_json(actions.git_remotes(query.get("repo") or state.repo or ""))
+                    return
+                if path == "/api/git/diff":
+                    self._send_json(
+                        actions.git_diff(
+                            query.get("repo") or state.repo or "",
+                            staged=query.get("staged") in ("1", "true", "yes"),
+                            path=query.get("path") or None,
+                        )
+                    )
+                    return
                 self._send_error_json("Not found.", 404)
             except actions.ActionError as exc:
                 self._send_error_json(str(exc), exc.status, exc.detail)
@@ -429,6 +456,42 @@ def _make_handler(state: AppState, token: str):
                 )
                 return
 
+            if path == "/api/graph":
+                options = payload.get("options") or {}
+                if not isinstance(options, dict):
+                    raise actions.ActionError("Graph options must be an object.")
+                if not self._lock():
+                    return
+                try:
+                    self._send_json(actions.dependency_graph(self._repo(payload), options))
+                finally:
+                    self._unlock()
+                return
+
+            if path == "/api/history/doctor":
+                options = payload.get("options") or {}
+                if not isinstance(options, dict):
+                    raise actions.ActionError("Scan options must be an object.")
+                if not self._lock():
+                    return
+                try:
+                    result = actions.history_doctor(
+                        self._repo(payload),
+                        payload.get("limit") or 50,
+                        options,
+                        engine=state.engine,
+                        timeout=state.timeout,
+                    )
+                    state.remember(result["repo"], result["report"], options)
+                    self._send_json(result)
+                finally:
+                    self._unlock()
+                return
+
+            if path.startswith("/api/git/"):
+                self._handle_git(path, payload)
+                return
+
             if path.startswith("/api/maintenance/"):
                 action = path.rsplit("/", 1)[-1]
                 if action not in API_ACTIONS:
@@ -449,6 +512,25 @@ def _make_handler(state: AppState, token: str):
 
             if path == "/api/rules/check":
                 self._send_json(actions.check_rules(self._repo(payload), state.engine))
+                return
+
+            if path == "/api/rules/download":
+                options = payload.get("options") or {}
+                if not isinstance(options, dict):
+                    raise actions.ActionError("Rule pack options must be an object.")
+                if not self._lock():
+                    return
+                try:
+                    self._send_json(
+                        actions.download_rule_pack(
+                            self._repo(payload),
+                            options,
+                            engine=state.engine,
+                            timeout=state.timeout,
+                        )
+                    )
+                finally:
+                    self._unlock()
                 return
 
             if path == "/api/config/restore":
@@ -475,6 +557,107 @@ def _make_handler(state: AppState, token: str):
                 return
 
             self._send_error_json("Not found.", 404)
+
+        def _handle_git(self, path: str, payload: dict) -> None:
+            repo = self._repo(payload)
+            if path == "/api/git/status":
+                self._send_json(actions.git_status(repo))
+                return
+            if path == "/api/git/log":
+                self._send_json(
+                    actions.git_log(
+                        repo,
+                        payload.get("limit") or 20,
+                        all_branches=bool(payload.get("all")),
+                    )
+                )
+                return
+            if path == "/api/git/branches":
+                self._send_json(actions.git_branches(repo))
+                return
+            if path == "/api/git/remotes":
+                self._send_json(actions.git_remotes(repo))
+                return
+            if path == "/api/git/diff":
+                self._send_json(
+                    actions.git_diff(
+                        repo,
+                        staged=bool(payload.get("staged")),
+                        path=payload.get("path") or None,
+                    )
+                )
+                return
+
+            if not self._lock():
+                return
+            try:
+                paths = payload.get("paths") or []
+                if isinstance(paths, str):
+                    paths = [paths]
+                if not isinstance(paths, list):
+                    raise actions.ActionError("File paths must be a list.")
+
+                if path == "/api/git/add":
+                    result = actions.git_add(
+                        repo, paths, all_files=bool(payload.get("all"))
+                    )
+                elif path == "/api/git/unstage":
+                    result = actions.git_unstage(
+                        repo, paths, all_files=bool(payload.get("all"))
+                    )
+                elif path == "/api/git/commit":
+                    result = actions.git_commit(
+                        repo,
+                        str(payload.get("message") or ""),
+                        all_tracked=bool(payload.get("all_tracked")),
+                        amend=bool(payload.get("amend")),
+                        confirm=str(payload.get("confirm") or ""),
+                    )
+                elif path == "/api/git/fetch":
+                    result = actions.git_fetch(
+                        repo,
+                        str(payload.get("remote") or "origin"),
+                        prune=bool(payload.get("prune")),
+                    )
+                elif path == "/api/git/pull":
+                    result = actions.git_pull(
+                        repo,
+                        str(payload.get("remote") or "origin"),
+                        str(payload.get("branch") or ""),
+                    )
+                elif path == "/api/git/push":
+                    result = actions.git_push(
+                        repo,
+                        str(payload.get("remote") or "origin"),
+                        str(payload.get("branch") or ""),
+                        set_upstream=bool(payload.get("set_upstream", True)),
+                        force=bool(payload.get("force")),
+                        confirm=str(payload.get("confirm") or ""),
+                    )
+                elif path == "/api/git/branches/create":
+                    result = actions.git_create_branch(
+                        repo,
+                        str(payload.get("name") or ""),
+                        start_point=str(payload.get("start_point") or ""),
+                        checkout=bool(payload.get("checkout", True)),
+                    )
+                elif path == "/api/git/branches/switch":
+                    result = actions.git_switch_branch(
+                        repo, str(payload.get("name") or "")
+                    )
+                elif path == "/api/git/branches/delete":
+                    result = actions.git_delete_branch(
+                        repo,
+                        str(payload.get("name") or ""),
+                        force=bool(payload.get("force")),
+                        confirm=str(payload.get("confirm") or ""),
+                    )
+                else:
+                    self._send_error_json("Not found.", 404)
+                    return
+                self._send_json(result)
+            finally:
+                self._unlock()
 
         def _serve_report(self, repo: str, name: str) -> None:
             if not repo or not name:
