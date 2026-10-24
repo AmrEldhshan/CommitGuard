@@ -96,6 +96,7 @@ interprocedural analysis. See [Known limitations](#known-limitations) and the
 - [Quick start](#quick-start)
 - [What it checks](#what-it-checks)
 - [GitHub Actions](#github-actions)
+- [Local GUI (optional)](#local-gui-optional)
 - [Everyday commands](#everyday-commands)
 - [What gets scanned](#what-gets-scanned)
 - [Reports and redaction](#reports-and-redaction)
@@ -203,6 +204,44 @@ with a published tag or reviewed commit SHA.
 
 ---
 
+## Local GUI (optional)
+
+Commit Guard includes a local-only web control center. It is a thin layer over
+the same engine used by hooks and CI, so results never diverge. No extra
+dependencies, no cloud service, and no telemetry.
+
+```bash
+./commit-guard gui              # opens http://127.0.0.1:8765/?t=<one-time-token>
+./commit-guard gui --no-open    # just start the server
+./commit-guard gui --port 0     # pick a free port
+./commit-guard gui --report-only --report-path out/report.html
+```
+
+If you installed the package with pip, use `commit-guard-gui --repo .`.
+
+What you can control from the page:
+
+| Area | Actions |
+|---|---|
+| Scan | Staged / whole tree / history / revision range, threshold, baseline, cache, placeholders, dependency graph, SCA, secret visibility. |
+| Fixes | Preview rule-provided before/after fixes, select individual fixes, apply and stage them, preview PR inline suggestions. |
+| Pull requests | Create or update a report PR, or post inline suggestions to an existing PR (token stays in page memory). |
+| Baseline | Add current findings, owner/expiry metadata, per-finding suppression, and stale-suppression audits. |
+| Rules | Search active rules, inspect patterns, and validate the rule pack. |
+| Reports | Download HTML, JSON, SARIF, JUnit, GitLab, Checkstyle, or Markdown from the last scan. |
+| Maintenance | Status, doctor, install/repair, update, enable/disable hook, init config, uninstall. |
+| Configuration | Edit `.commit_guard.toml` with validation and a one-file backup. |
+
+Safety defaults: the server binds to `127.0.0.1`, every request needs a per-run
+token, the `Host` header is validated, secret values stay redacted unless you
+explicitly opt in, and GitHub actions require a token you provide per session.
+The GUI is opt-in — hooks and CI keep using the CLI and never start a server.
+
+For CI, the GUI's HTML report is the artifact equivalent. See
+[CI integrations](docs/CI.md#html-dashboard-artifact).
+
+---
+
 ## Everyday commands
 
 Run these from inside an installed repository:
@@ -210,6 +249,7 @@ Run these from inside an installed repository:
 | Command | What it does |
 |---|---|
 | `./commit-guard scan` | Manual scan of staged changes. |
+| `./commit-guard gui` | Open the local web control center. |
 | `./commit-guard status` | Version, rule count, hook state, config/baseline state. |
 | `./commit-guard doctor` | Diagnose git/Python/PyYAML/rules/hook problems. |
 | `./commit-guard init` | Write a commented `.commit_guard.toml`. |

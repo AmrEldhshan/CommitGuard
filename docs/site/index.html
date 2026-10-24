@@ -1,0 +1,758 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CommitGuard — Fast, Offline Pre-Commit Security & Static Analysis</title>
+<meta name="description" content="Next-Gen local security scanner: secrets, AST taint flows, dependency blast-radius graph, and automated 1-click fixes. 100% offline, zero telemetry.">
+<style>
+:root {
+  --bg: #0b0f17;
+  --panel: #111827;
+  --panel2: #0d1422;
+  --line: #222f46;
+  --line2: #2f405d;
+  --text: #f0f4fc;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-glow: rgba(56, 189, 248, 0.25);
+  --accent2: #818cf8;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --code-bg: #070b12;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: radial-gradient(1200px 700px at 20% -10%, #162544 0%, var(--bg) 60%) no-repeat, var(--bg);
+  color: var(--text);
+  font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  overflow-x: hidden;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* Navigation */
+.nav-wrap {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(11, 15, 23, 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.nav {
+  max-width: 1200px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 24px;
+}
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 18px; color: #fff; }
+.logo-icon {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, #38bdf8, #818cf8);
+  display: grid; place-items: center; color: #08101c; font-weight: 900; font-size: 16px;
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+.nav-links { display: flex; gap: 24px; align-items: center; }
+.nav-links a { color: var(--muted); font-weight: 600; font-size: 14px; transition: color .2s; }
+.nav-links a:hover { color: #fff; text-decoration: none; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid var(--line2); background: #162033;
+  color: #fff; border-radius: 9px; padding: 9px 16px;
+  font-weight: 700; font-size: 14px; cursor: pointer;
+  transition: all .2s ease; text-decoration: none!important;
+}
+.btn:hover { background: #1f2d47; border-color: #3b5277; transform: translateY(-1px); }
+.btn.primary {
+  background: linear-gradient(135deg, #0284c7, #6366f1);
+  border-color: transparent;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
+}
+.btn.primary:hover { filter: brightness(1.12); box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5); }
+.btn.success {
+  background: linear-gradient(135deg, #059669, #10b981);
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.35);
+}
+.btn.success:hover { filter: brightness(1.12); box-shadow: 0 6px 22px rgba(16, 185, 129, 0.5); }
+.btn.small { padding: 6px 12px; font-size: 12.5px; border-radius: 7px; }
+
+/* Container */
+.container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+/* Hero */
+.hero { padding: 80px 0 60px; text-align: center; }
+.pill-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 5px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 700;
+  color: #7dd3fc; margin-bottom: 24px;
+}
+.hero h1 {
+  font-size: clamp(34px, 5.5vw, 60px); font-weight: 900;
+  line-height: 1.15; margin: 0 0 20px;
+  background: linear-gradient(180deg, #ffffff 40%, #94a3b8 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hero p {
+  max-width: 740px; margin: 0 auto 32px;
+  font-size: clamp(16px, 2vw, 19px); color: var(--muted); line-height: 1.6;
+}
+.hero-actions { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-bottom: 40px; }
+
+/* Section Titles */
+.section { padding: 60px 0; border-top: 1px solid var(--line); }
+.section-header { text-align: center; margin-bottom: 46px; }
+.section-header h2 { font-size: 32px; font-weight: 800; margin: 0 0 12px; color: #fff; }
+.section-header p { font-size: 16px; color: var(--muted); max-width: 650px; margin: 0 auto; }
+
+/* Install Box */
+.terminal-window {
+  background: var(--code-bg);
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  margin: 0 auto 30px;
+  max-width: 950px;
+}
+.terminal-top {
+  background: #0f1726;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 18px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+}
+.terminal-dots { display: flex; gap: 7px; align-items: center; }
+.dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.dot.red { background: #f87171; }
+.dot.yellow { background: #fbbf24; }
+.dot.green { background: #34d399; }
+.tab-group { display: flex; gap: 6px; background: #070c14; padding: 4px; border-radius: 8px; border: 1px solid var(--line); }
+.tab-btn {
+  background: transparent; border: 0; color: var(--muted);
+  padding: 6px 14px; border-radius: 6px; font-weight: 700; font-size: 13px;
+  cursor: pointer; transition: all .15s;
+}
+.tab-btn:hover { color: #fff; }
+.tab-btn.active { background: #1e293b; color: #38bdf8; }
+
+.terminal-actions { display: flex; gap: 8px; }
+.terminal-body {
+  padding: 20px 24px;
+  max-height: 480px;
+  overflow-y: auto;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.terminal-body pre { margin: 0; color: #e2e8f0; }
+
+.callout-box {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(56, 189, 248, 0.08));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 950px; margin: 0 auto; gap: 16px; flex-wrap: wrap;
+}
+.callout-box strong { color: #6ee7b7; font-size: 15px; }
+
+/* Grid Features */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+.feature-card {
+  background: linear-gradient(180deg, #121927 0%, #0d131f 100%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px;
+  transition: transform .2s, border-color .2s;
+}
+.feature-card:hover { transform: translateY(-3px); border-color: var(--line2); }
+.feature-icon {
+  width: 44px; height: 44px; border-radius: 11px;
+  background: #182337; border: 1px solid var(--line2);
+  display: grid; place-items: center; font-size: 22px;
+  margin-bottom: 16px;
+}
+.feature-card h3 { font-size: 18px; margin: 0 0 8px; color: #fff; }
+.feature-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+/* Control Center Highlight */
+.gui-preview {
+  background: #0f1725;
+  border: 1px solid var(--line2);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 25px 70px rgba(0,0,0,0.7);
+}
+.gui-header {
+  background: #141e30;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.gui-content { padding: 24px; }
+.gui-mock-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+.gui-mock-table th, .gui-mock-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+.gui-mock-table th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 800; text-transform: uppercase; }
+.badge.crit { background: #3d1419; color: #ff9a9a; border: 1px solid #75202a; }
+.badge.high { background: #3d2314; color: #ffbd8a; border: 1px solid #753d20; }
+.badge.fix { background: #0e301e; color: #86efac; border: 1px solid #1f6b43; }
+
+/* Toast */
+.toast-notice {
+  position: fixed; bottom: 24px; right: 24px; z-index: 100;
+  background: #162033; border: 1px solid #38bdf8;
+  color: #fff; padding: 12px 18px; border-radius: 9px;
+  font-weight: 700; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  display: none; animation: slideIn .3s ease;
+}
+@keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+/* Footer */
+footer {
+  border-top: 1px solid var(--line);
+  padding: 40px 0;
+  color: var(--muted);
+  text-align: center;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .features-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- Header Navigation -->
+<header class="nav-wrap">
+  <div class="nav">
+    <a href="#" class="brand">
+      <div class="logo-icon">CG</div>
+      <span>CommitGuard</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#install">Install Script</a>
+      <a href="#features">Features</a>
+      <a href="#control-center">Control Center GUI</a>
+      <a href="#cli">CLI Reference</a>
+      <a href="https://github.com/AmrEldhshan/CommitGuard" target="_blank" class="btn small">
+        <svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero Section -->
+<main>
+<section class="hero">
+  <div class="container">
+    <div class="pill-badge">
+      <span>🛡️ 100% Offline · Zero Telemetry · Local Privacy First</span>
+    </div>
+    <h1>Secure Your Code Before It Reaches Git.</h1>
+    <p>
+      CommitGuard is a fast, offline pre-commit security &amp; SAST analysis engine.
+      Scans only added diff lines for hardcoded credentials, AST cross-line taint flows,
+      vulnerable packages, and dependency blast-radius — with 1-click auto-fixes.
+    </p>
+    <div class="hero-actions">
+      <a href="#install" class="btn primary">
+        <span>⚡ Install to Your Repo</span>
+      </a>
+      <a href="#control-center" class="btn">
+        <span>🖥️ Open Web Control Center</span>
+      </a>
+      <a href="https://github.com/AmrEldhshan/CommitGuard" target="_blank" class="btn">
+        <span>⭐ Star on GitHub</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- Installation Section (Requested Feature) -->
+<section id="install" class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2>One-Click Offline Installation</h2>
+      <p>
+        Works on Linux, macOS, and Windows. Run the script inside any existing Git project
+        (e.g. <code>repo A</code>) to install a self-contained local copy into <code>.commit_guard/</code>.
+      </p>
+    </div>
+
+    <div class="terminal-window">
+      <div class="terminal-top">
+        <div class="terminal-dots">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+          <span style="font-size:12px;color:var(--muted);margin-left:8px;font-family:monospace;" id="scriptFileName">install.sh</span>
+        </div>
+        <div class="tab-group">
+          <button class="tab-btn active" onclick="switchTab('sh')">Linux &amp; macOS (install.sh)</button>
+          <button class="tab-btn" onclick="switchTab('ps1')">Windows PowerShell (install.ps1)</button>
+          <button class="tab-btn" onclick="switchTab('bat')">Windows CMD (install.bat)</button>
+        </div>
+        <div class="terminal-actions">
+          <button class="btn small" onclick="copyScriptCode()">📋 Copy Code</button>
+          <a id="downloadScriptBtn" href="install.sh" download class="btn small success">⬇️ Download Script</a>
+        </div>
+      </div>
+      <div class="terminal-body">
+        <pre><code id="scriptCodeDisplay">Loading script...</code></pre>
+      </div>
+    </div>
+
+    <!-- Verification Callout -->
+    <div class="callout-box">
+      <div>
+        <strong>🛡️ Built-in Safety &amp; Repo Detection:</strong><br>
+        <span style="font-size:13.5px;color:var(--muted)">
+          The installer automatically tests if the current directory is a valid git repository.
+          If outside a repository, it safely aborts with an error. When complete, it concludes with:
+        </span>
+      </div>
+      <div style="font-family:monospace;background:#061a12;border:1px solid #10b981;padding:8px 14px;border-radius:8px;color:#6ee7b7;font-weight:700">
+        "Have a nice life far from hacking developer bro :) 😊"
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features Grid -->
+<section id="features" class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2>Engineered for High Precision &amp; Speed</h2>
+      <p>Everything runs on your local CPU in milliseconds. Nothing is ever sent to the cloud.</p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🔑</div>
+        <h3>Deep Secret Detection</h3>
+        <p>300+ rules covering AWS, GCP, Azure, OpenAI, Anthropic, Stripe, SSH keys, combined with Shannon entropy and character-class adjustment to eliminate false positives.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🧠</div>
+        <h3>AST Cross-Line Taint Analysis</h3>
+        <p>Follows untrusted user inputs (Flask/Django <code>request.args</code>, env variables) across multi-line variable reassignments straight into SQL execution and shell sinks.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔗</div>
+        <h3>Dependency &amp; Blast Radius</h3>
+        <p>Parses import trees in 7+ languages (Python, JS/TS, Go, Rust, Java, etc.) and calculates the exact blast-radius of vulnerable files with native Mermaid diagrams.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>1-Click Auto-Fix Engine</h3>
+        <p>Don't just detect vulnerabilities — fix them. Automatically transforms insecure code (like <code>yaml.load()</code> to <code>yaml.safe_load()</code>) and git-stages the result.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📦</div>
+        <h3>Free Dependency SCA</h3>
+        <p>Scans project manifests (<code>requirements.txt</code>, <code>package.json</code>, etc.) against Google OSV.dev batch vulnerability data completely free with zero API keys required.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🤖</div>
+        <h3>GitHub Actions &amp; PR Bot</h3>
+        <p>Generates clean SARIF reports, GitHub annotations, automated pull requests, and native click-to-commit inline suggestions on PR diffs.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Control Center GUI Section -->
+<section id="control-center" class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2>Web Control Center &amp; Suggestion Engine</h2>
+      <p>Launch a modern, dark-themed local GUI on <code>127.0.0.1</code> with a single command.</p>
+    </div>
+
+    <div class="gui-preview">
+      <div class="gui-header">
+        <div class="terminal-dots">
+          <span class="dot red"></span>
+          <span class="dot yellow"></span>
+          <span class="dot green"></span>
+          <span style="font-size:13px;font-weight:700;color:#fff;margin-left:10px;">CommitGuard Control Center · http://127.0.0.1:8765</span>
+        </div>
+        <div>
+          <span class="badge high">Scan Mode: Staged</span>
+        </div>
+      </div>
+      <div class="gui-content">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+          <div>
+            <span style="font-size:18px;font-weight:800;color:#fff">Scan Findings (2)</span>
+            <span class="badge crit" style="margin-left:8px;">1 Critical</span>
+            <span class="badge high" style="margin-left:4px;">1 High</span>
+            <span class="badge fix" style="margin-left:4px;">⚡ 1 Fix Available</span>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn small primary" style="background:#132338;border-color:#2a4d7c;color:#70b8ff">💡 Suggest All Fixes (1)</button>
+            <button class="btn small success">⚡ Apply Selected Fixes</button>
+          </div>
+        </div>
+
+        <table class="gui-mock-table">
+          <thead>
+            <tr>
+              <th style="width:30px"><input type="checkbox" checked disabled></th>
+              <th>Severity</th>
+              <th>Rule ID</th>
+              <th>Location</th>
+              <th>Description</th>
+              <th style="text-align:right">Interactive Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox" checked disabled></td>
+              <td><span class="badge high">high</span></td>
+              <td><code>python-yaml-unsafe-load</code></td>
+              <td><code>src/config.py:42</code></td>
+              <td>Unsafe <code>yaml.load()</code> allows arbitrary code execution.</td>
+              <td style="text-align:right">
+                <button class="btn small" style="background:#132338;border-color:#2a4d7c;color:#70b8ff">💡 Suggest fix</button>
+                <button class="btn small success">⚡ Apply</button>
+                <button class="btn small">Details</button>
+              </td>
+            </tr>
+            <tr>
+              <td><input type="checkbox" disabled></td>
+              <td><span class="badge crit">critical</span></td>
+              <td><code>gitleaks-aws-access-key</code></td>
+              <td><code>deploy/creds.py:12</code></td>
+              <td>Hardcoded AWS Access Key ID detected.</td>
+              <td style="text-align:right">
+                <button class="btn small" style="background:#132338;border-color:#2a4d7c;color:#70b8ff">💡 Remediation</button>
+                <button class="btn small">Suppress</button>
+                <button class="btn small">Details</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:20px;text-align:center;">
+          <code style="background:#070b12;padding:8px 16px;border-radius:8px;border:1px solid var(--line);color:#38bdf8">
+            $ ./commit-guard gui
+          </code>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CLI Quick Reference -->
+<section id="cli" class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2>Command-Line Reference</h2>
+      <p>Use the lightweight <code>./commit-guard</code> wrapper or invoke <code>main.py</code> directly.</p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <h3>Manual Staged Scan</h3>
+        <pre class="pre" style="margin-top:10px"><code>./commit-guard scan
+./commit-guard scan --threshold medium</code></pre>
+      </div>
+      <div class="feature-card">
+        <h3>1-Click Auto-Fix</h3>
+        <pre class="pre" style="margin-top:10px"><code>./commit-guard scan --fix --dry-run
+./commit-guard scan --fix</code></pre>
+      </div>
+      <div class="feature-card">
+        <h3>Dependency Blast-Radius</h3>
+        <pre class="pre" style="margin-top:10px"><code>./commit-guard scan --dep-graph
+./commit-guard scan --dep-graph-format all</code></pre>
+      </div>
+      <div class="feature-card">
+        <h3>Control Center Web GUI</h3>
+        <pre class="pre" style="margin-top:10px"><code>./commit-guard gui
+./commit-guard gui --port 8765</code></pre>
+      </div>
+      <div class="feature-card">
+        <h3>Repository Health Doctor</h3>
+        <pre class="pre" style="margin-top:10px"><code>./commit-guard doctor
+./commit-guard status</code></pre>
+      </div>
+      <div class="feature-card">
+        <h3>Pull Request Automation</h3>
+        <pre class="pre" style="margin-top:10px"><code>./commit-guard scan --create-pr
+./commit-guard scan --review-pr</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <p>
+      CommitGuard is open source under the MIT License.<br>
+      Developed with zero telemetry and 100% offline security in mind.
+    </p>
+    <p style="color:#6ee7b7;font-weight:700">
+      Have a nice life far from hacking developer bro :) 😊
+    </p>
+  </div>
+</footer>
+
+<div class="toast-notice" id="copyToast">Copied to clipboard! 📋</div>
+
+<script>
+const scripts = {
+  sh: {
+    name: 'install.sh',
+    download: 'install.sh',
+    code: `#!/usr/bin/env bash
+# ==============================================================================
+# CommitGuard — Universal Offline Installer for Linux & macOS
+# Repository: https://github.com/AmrEldhshan/CommitGuard
+# ==============================================================================
+set -euo pipefail
+
+# ANSI Colors
+RED='\\033[0;31m'
+GREEN='\\033[0;32m'
+BLUE='\\033[0;34m'
+YELLOW='\\033[1;33m'
+CYAN='\\033[0;36m'
+BOLD='\\033[1m'
+NC='\\033[0m'
+
+echo -e "\${CYAN}\${BOLD}"
+echo "  ╔════════════════════════════════════════════════════════════╗"
+echo "  ║        🛡️  CommitGuard — Universal Offline Installer        ║"
+echo "  ║  Next-Gen Pre-Commit Security, SAST & Blast-Radius Engine  ║"
+echo "  ╚════════════════════════════════════════════════════════════╝"
+echo -e "\${NC}"
+
+# 1. Verification: Ensure current directory is inside a Git repository
+echo -e "\${BLUE}▶ Checking environment...\${NC}"
+
+if ! command -v git >/dev/null 2>&1; then
+    echo -e "\${RED}\${BOLD}❌ [ERROR] 'git' command not found on PATH.\${NC}" >&2
+    exit 1
+fi
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo -e "\${RED}\${BOLD}❌ [ERROR] The current directory is NOT a git repository!\${NC}" >&2
+    echo -e "\${YELLOW}CommitGuard must be installed inside a valid git repository (e.g., your project repo).\${NC}" >&2
+    echo -e "Please navigate into your project directory first:" >&2
+    echo -e "  cd /path/to/your/project" >&2
+    echo -e "  ./install.sh" >&2
+    exit 1
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+REPO_NAME="$(basename "$REPO_ROOT")"
+echo -e "\${GREEN}✔ Valid git repository detected:\${NC} \${BOLD}\${REPO_NAME}\${NC} ($REPO_ROOT)"
+
+# 2. Python 3 Verification
+PYTHON_BIN=""
+for candidate in python3 python python3.14 python3.13 python3.12 python3.11; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+        if "$candidate" -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" 2>/dev/null; then
+            PYTHON_BIN="$candidate"
+            break
+        fi
+    fi
+done
+
+if [ -z "$PYTHON_BIN" ]; then
+    echo -e "\${RED}\${BOLD}❌ [ERROR] Python 3.10+ was not found on PATH.\${NC}" >&2
+    exit 1
+fi
+
+# Ensure PyYAML is available
+if ! "$PYTHON_BIN" -c "import yaml" >/dev/null 2>&1; then
+    echo -e "\${YELLOW}ℹ Installing required PyYAML...\${NC}"
+    "$PYTHON_BIN" -m pip install pyyaml --quiet --user 2>/dev/null || true
+fi
+
+# 3. Locate or Download CommitGuard Toolkit Source
+TEMP_DIR=""
+cleanup() { if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then rm -rf "$TEMP_DIR"; fi; }
+trap cleanup EXIT INT TERM
+
+SOURCE_DIR=""
+SCRIPT_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "\${SCRIPT_DIR}/install_hook.py" ]; then
+    SOURCE_DIR="\${SCRIPT_DIR}"
+elif [ -f "\${REPO_ROOT}/install_hook.py" ]; then
+    SOURCE_DIR="\${REPO_ROOT}"
+fi
+
+if [ -n "$SOURCE_DIR" ] && [ -f "\${SOURCE_DIR}/install_hook.py" ]; then
+    echo -e "\${BLUE}▶ Using local CommitGuard toolkit from:\${NC} \${SOURCE_DIR}"
+else
+    echo -e "\${BLUE}▶ Downloading latest CommitGuard toolkit from GitHub...\${NC}"
+    TEMP_DIR="$(mktemp -d -t commitguard-install-XXXXXX)"
+    ARCHIVE_URL="https://github.com/AmrEldhshan/CommitGuard/archive/refs/heads/main.tar.gz"
+    curl -fsSL "$ARCHIVE_URL" -o "\${TEMP_DIR}/commitguard.tar.gz"
+    tar -xzf "\${TEMP_DIR}/commitguard.tar.gz" -C "$TEMP_DIR"
+    SOURCE_DIR="\${TEMP_DIR}/CommitGuard-main"
+fi
+
+# 4. Execute Installation into the Target Repository
+echo -e "\${BLUE}▶ Installing CommitGuard into:\${NC} \${REPO_ROOT}..."
+"$PYTHON_BIN" "\${SOURCE_DIR}/install_hook.py" install "$REPO_ROOT" --force
+
+if [ -f "\${REPO_ROOT}/commit-guard" ]; then
+    chmod +x "\${REPO_ROOT}/commit-guard"
+fi
+
+# 5. Sign-off
+echo ""
+echo -e "\${GREEN}========================================================================\${NC}"
+echo -e "\${GREEN}\${BOLD}✔ CommitGuard has been successfully installed into: \${REPO_NAME}!\${NC}"
+echo -e "\${GREEN}========================================================================\${NC}"
+echo ""
+echo -e "\${GREEN}\${BOLD}Have a nice life far from hacking developer bro :) 😊\${NC}"
+echo ""`
+  },
+  ps1: {
+    name: 'install.ps1',
+    download: 'install.ps1',
+    code: `<#
+.SYNOPSIS
+    CommitGuard — Universal Offline Installer for Windows PowerShell
+    Repository: https://github.com/AmrEldhshan/CommitGuard
+#>
+
+$ErrorActionPreference = "Stop"
+
+Write-Host "================================================================" -ForegroundColor Cyan
+Write-Host "        🛡️  CommitGuard — Universal Offline Installer (Windows)  " -ForegroundColor Cyan
+Write-Host "================================================================" -ForegroundColor Cyan
+
+# 1. Verification: Ensure current directory is inside a Git repository
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "❌ [ERROR] 'git' command not found on PATH." -ForegroundColor Red
+    exit 1
+}
+
+$isInside = git rev-parse --is-inside-work-tree 2>$null
+if ($LASTEXITCODE -ne 0 -or $isInside.Trim() -ne "true") {
+    Write-Host "❌ [ERROR] The current directory is NOT a git repository!" -ForegroundColor Red
+    Write-Host "Please navigate into your project directory first:" -ForegroundColor Yellow
+    Write-Host "  cd C:\\path\\to\\your\\project" -ForegroundColor White
+    Write-Host "  .\\install.ps1" -ForegroundColor White
+    exit 1
+}
+
+$repoRoot = (git rev-parse --show-toplevel).Trim()
+$repoName = Split-Path $repoRoot -Leaf
+Write-Host "✔ Valid git repository detected: $repoName ($repoRoot)" -ForegroundColor Green
+
+# 2. Python Check
+$pythonBin = "python"
+if (-not (Get-Command $pythonBin -ErrorAction SilentlyContinue)) {
+    $pythonBin = "python3"
+}
+
+# 3. Download and Install
+$tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("commitguard-" + [System.Guid]::NewGuid().ToString().Substring(0,8))
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+$zipPath = Join-Path $tempDir "commitguard.zip"
+$archiveUrl = "https://github.com/AmrEldhshan/CommitGuard/archive/refs/heads/main.zip"
+
+Invoke-WebRequest -Uri $archiveUrl -OutFile $zipPath -UseBasicParsing
+Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
+$sourceDir = Join-Path $tempDir "CommitGuard-main"
+
+Write-Host "▶ Installing CommitGuard into: $repoRoot..." -ForegroundColor Blue
+& $pythonBin (Join-Path $sourceDir "install_hook.py") install $repoRoot --force
+
+Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
+
+Write-Host ""
+Write-Host "========================================================================" -ForegroundColor Green
+Write-Host "✔ CommitGuard has been successfully installed into: $repoName!" -ForegroundColor Green
+Write-Host "========================================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "Have a nice life far from hacking developer bro :) 😊" -ForegroundColor Green
+Write-Host ""`
+  },
+  bat: {
+    name: 'install.bat',
+    download: 'install.bat',
+    code: `@echo off
+REM ==============================================================================
+REM CommitGuard — Universal Offline Installer for Windows Batch
+REM ==============================================================================
+
+echo ================================================================
+echo         CommitGuard -- Universal Offline Installer (Windows)
+echo ================================================================
+
+where git >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] 'git' command not found on PATH.
+    exit /b 1
+)
+
+git rev-parse --is-inside-work-tree >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] The current directory is NOT a git repository!
+    echo Please navigate into your project repository first:
+    echo   cd C:\\path\\to\\your\\project
+    echo   install.bat
+    exit /b 1
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1"
+if %ERRORLEVEL% EQU 0 (
+    exit /b 0
+)
+
+echo [ERROR] Installer encountered an issue.
+exit /b %ERRORLEVEL%`
+  }
+};
+
+let currentTab = 'sh';
+
+function switchTab(type) {
+  currentTab = type;
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', (type === 'sh' && i === 0) || (type === 'ps1' && i === 1) || (type === 'bat' && i === 2));
+  });
+  const data = scripts[type];
+  document.getElementById('scriptFileName').textContent = data.name;
+  document.getElementById('scriptCodeDisplay').textContent = data.code;
+  const dl = document.getElementById('downloadScriptBtn');
+  dl.href = data.download;
+  dl.download = data.name;
+}
+
+function copyScriptCode() {
+  const code = scripts[currentTab].code;
+  navigator.clipboard.writeText(code).then(() => {
+    const toast = document.getElementById('copyToast');
+    toast.style.display = 'block';
+    setTimeout(() => { toast.style.display = 'none'; }, 2400);
+  });
+}
+
+// Initialize
+switchTab('sh');
+</script>
+</body>
+</html>
+

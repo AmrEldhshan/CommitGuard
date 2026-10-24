@@ -12,7 +12,7 @@ inputs:
     required: false
     default: high
   format:
-    description: Report format (markdown, json, sarif, both, junit, gitlab, checkstyle).
+    description: Report format (markdown, json, sarif, both, junit, gitlab, checkstyle, html).
     required: false
     default: markdown
   scan-mode:
@@ -71,6 +71,9 @@ outputs:
   graph:
     description: Mermaid graph path.
     value: commit_guard_reports/dependency-graph.mmd
+  html-report:
+    description: HTML dashboard path when format is html.
+    value: commit_guard_reports/report.html
 
 runs:
   using: composite
