@@ -21,6 +21,7 @@ Subcommands:
     check-rules Validate rules and the positive/negative corpus.
     explain     Show one rule's details.
     suppressions Audit baseline entries for expiry/staleness.
+    gui         Launch the local web control center.
 
 Run with no subcommand for an interactive menu.
 """
@@ -166,6 +167,11 @@ def copy_toolkit(
     source_install_hook = source_root / "install_hook.py"
     if source_install_hook.is_file():
         shutil.copy2(source_install_hook, install_dir / "install_hook.py")
+
+    for gui_name in ("gui_server.py", "gui_actions.py", "gui_page.py"):
+        source_gui = source_root / gui_name
+        if source_gui.is_file():
+            shutil.copy2(source_gui, install_dir / gui_name)
 
     dest_core = install_dir / "core"
     if dest_core.exists():
@@ -1012,6 +1018,45 @@ def run_manual_scan(
 # Interactive menu
 # --------------------------------------------------------------------------
 
+def _launch_gui(
+    repo_root: Path,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    no_open: bool = False,
+    allow_remote: bool = False,
+    timeout: int = 600,
+    report_only: bool = False,
+    report_path: Path | None = None,
+) -> int:
+    gui = get_install_dir(repo_root) / "gui_server.py"
+    if not gui.is_file():
+        gui = _TOOLKIT_DIR / "gui_server.py"
+    if not gui.is_file():
+        raise HookError("gui_server.py is missing; reinstall or update Commit Guard.")
+    command = [
+        sys.executable,
+        str(gui),
+        "--repo",
+        str(repo_root),
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--timeout",
+        str(timeout),
+    ]
+    if no_open:
+        command.append("--no-open")
+    if report_only:
+        command.append("--report-only")
+    if report_path is not None:
+        command.extend(["--report-path", str(report_path)])
+    if allow_remote:
+        command.append("--allow-remote")
+    return subprocess.run(command, cwd=str(repo_root), check=False).returncode
+
+
 def interactive_menu(default_path: str | None = None) -> None:
     print("\n" + "=" * 66)
     print("      🛡️   COMMIT GUARD — Interactive Manager")
@@ -1035,6 +1080,7 @@ def interactive_menu(default_path: str | None = None) -> None:
         "7": ("Enable auto-scan-on-commit", lambda: enable(repo_root)),
         "8": ("Update installed engine", lambda: update(repo_root)),
         "9": ("Uninstall completely", lambda: _confirm_uninstall(repo_root)),
+        "g": ("Launch local web GUI", lambda: _launch_gui(repo_root)),
         "c": ("Change target repository", None),
         "0": ("Exit", None),
     }
@@ -1132,7 +1178,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan = sub.add_parser("scan", help="Run a manual scan without committing.")
     p_scan.add_argument("repo", nargs="?", default=".")
     p_scan.add_argument("--threshold", choices=("critical", "high", "medium", "low", "info"), default=None)
-    p_scan.add_argument("--format", choices=("markdown", "json", "sarif", "both", "junit", "gitlab", "checkstyle"), default=None)
+    p_scan.add_argument("--format", choices=("markdown", "json", "sarif", "both", "junit", "gitlab", "checkstyle", "html"), default=None)
     scan_modes = p_scan.add_mutually_exclusive_group()
     scan_modes.add_argument("--diff", metavar="REV", dest="diff_revision",
                         help="Scan a revision range, e.g. origin/main...HEAD.")
@@ -1157,6 +1203,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan.add_argument("--baseline-expiry", metavar="YYYY-MM-DD", default=None)
     p_scan.add_argument("--no-placeholder-filter", action="store_true",
                         help="Report obvious example/dummy values too.")
+
+    p_gui = sub.add_parser("gui", help="Launch the local web control center.")
+    p_gui.add_argument("repo", nargs="?", default=".")
+    p_gui.add_argument("--repo", dest="repo_opt", default=None,
+                       help="Repository path (alternative to the positional argument).")
+    p_gui.add_argument("--host", default="127.0.0.1",
+                       help="Bind address (loopback only by default).")
+    p_gui.add_argument("--port", type=int, default=8765,
+                       help="Port (0 chooses a free port).")
+    p_gui.add_argument("--no-open", action="store_true",
+                       help="Do not open a browser automatically.")
+    p_gui.add_argument("--allow-remote", action="store_true",
+                       help="Allow binding to a non-loopback address.")
+    p_gui.add_argument("--timeout", type=int, default=600,
+                       help="Per-operation timeout in seconds.")
+    p_gui.add_argument("--report-only", action="store_true",
+                       help="Generate an HTML report and exit (no server).")
+    p_gui.add_argument("--report-path", type=Path, default=None,
+                       help="Output path for --report-only.")
 
     p_check = sub.add_parser("check-rules", help="Validate rules and corpus samples.")
     p_check.add_argument("repo", nargs="?", default=".")
@@ -1192,7 +1257,9 @@ def main(argv: list[str] | None = None) -> int:
         interactive_menu()
         return 0
 
-    target = Path(getattr(args, "repo", ".")).expanduser().resolve()
+    target = Path(
+        getattr(args, "repo_opt", None) or getattr(args, "repo", ".")
+    ).expanduser().resolve()
 
     try:
         if args.command == "install":
@@ -1243,6 +1310,18 @@ def main(argv: list[str] | None = None) -> int:
                 baseline_owner=args.baseline_owner,
                 baseline_expiry=args.baseline_expiry,
                 no_placeholder_filter=args.no_placeholder_filter,
+            )
+        elif args.command == "gui":
+            repo_root = find_repo_root(target)
+            return _launch_gui(
+                repo_root,
+                host=args.host,
+                port=args.port,
+                no_open=args.no_open,
+                allow_remote=args.allow_remote,
+                timeout=args.timeout,
+                report_only=args.report_only,
+                report_path=args.report_path,
             )
         elif args.command in ("check-rules", "explain", "suppressions"):
             repo_root = find_repo_root(target)

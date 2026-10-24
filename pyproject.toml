@@ -26,13 +26,14 @@ classifiers = [
 [project.scripts]
 commit-guard = "install_hook:main"
 commit-guard-scan = "main:main"
+commit-guard-gui = "gui_server:main"
 
 [project.urls]
 Documentation = "https://github.com/AmrEldhshan/CommitGuard#readme"
 Source = "https://github.com/AmrEldhshan/CommitGuard"
 
 [tool.setuptools]
-py-modules = ["main", "install_hook"]
+py-modules = ["main", "install_hook", "gui_server", "gui_actions", "gui_page"]
 packages = ["core", "rules"]
 include-package-data = true
 

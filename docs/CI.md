@@ -49,6 +49,29 @@ or change the exit code.
 
 ---
 
+## HTML dashboard artifact
+
+CI runners cannot host the local GUI, but the same self-contained HTML dashboard
+can be uploaded as a build artifact and opened by anyone with access to the run:
+
+```yaml
+- uses: AmrEldhshan/CommitGuard@main
+  with:
+    format: html
+    scan-mode: all
+
+- uses: actions/upload-artifact@v4
+  with:
+    name: commitguard-report
+    path: commit_guard_reports/report.html
+```
+
+The HTML report contains inline CSS and SVG only — no scripts, CDNs, or fonts —
+and secret values remain redacted. Locally, `./commit-guard gui` provides the
+interactive version of the same results.
+
+---
+
 ## JSON schema
 
 ```json

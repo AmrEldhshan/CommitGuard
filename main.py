@@ -94,6 +94,7 @@ try:
         get_staged_diff,
         is_inside_git_repo,
     )
+    from core.paths import PathMatcher
     from core.pr_creator import (
         GitHubAPIError,
         GitHubClient,
@@ -103,7 +104,6 @@ try:
         publish_report_pr,
         pull_request_context_from_environment,
     )
-    from core.paths import PathMatcher
     from core.reporter import (
         build_markdown_report,
         print_cli_summary,

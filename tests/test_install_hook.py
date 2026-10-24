@@ -51,6 +51,9 @@ class InstallerTests(unittest.TestCase):
         install_dir = self.quiet_install()
         hook = self.root / ".git" / "hooks" / "pre-commit"
         self.assertTrue((install_dir / "main.py").is_file())
+        self.assertTrue((install_dir / "gui_server.py").is_file())
+        self.assertTrue((install_dir / "gui_actions.py").is_file())
+        self.assertTrue((install_dir / "gui_page.py").is_file())
         self.assertTrue((self.root / "commit-guard").is_file())
         self.assertTrue(os.access(hook, os.X_OK))
         self.assertIn(".commit_guard/", (self.root / ".gitignore").read_text())
@@ -70,6 +73,17 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse((self.root / "commit-guard").exists())
         self.assertIn("echo prior", hook.read_text())
         self.assertTrue((self.root / ".commit_guard.toml").is_file())
+
+    def test_parser_accepts_gui_and_html_format(self):
+        parser = install_hook.build_parser()
+        args = parser.parse_args(["gui", "--port", "0", "--no-open"])
+        self.assertEqual(args.command, "gui")
+        self.assertEqual(args.port, 0)
+        self.assertTrue(args.no_open)
+        args = parser.parse_args(["scan", "--format", "html"])
+        self.assertEqual(args.format, "html")
+        gui_args = parser.parse_args(["gui", "--repo", "."])
+        self.assertEqual(gui_args.repo_opt, ".")
 
     def test_install_honors_core_hookspath(self):
         hooks_dir = self.root / ".githooks"

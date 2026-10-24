@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Optional local web control center (`./commit-guard gui`, `commit-guard-gui`):
+  scan modes, severity filters, safe-fix preview/apply with per-finding
+  selection, baseline management, rule explorer, configuration editor,
+  maintenance actions, report downloads, report pull requests, and inline PR
+  suggestions.
+- GUI server binds to loopback, requires a per-run token, validates the `Host`
+  header, caps request bodies, and keeps secrets redacted by default.
+- `gui`, `gui --report-only`, and `scan --format html` in the installed
+  manager; the installer copies the GUI modules into `.commit_guard/`.
+- GitHub Action accepts `format: html` and exposes an `html-report` output.
+- Tests for GUI actions, HTTP routes/security, fix application, and installer
+  integration.
+
+### Changed
+
+- `scan --format html` is now accepted by the installed `./commit-guard scan`
+  wrapper (it was already supported by `main.py`).
+
 ## 2.1.0
 
 ### Added
